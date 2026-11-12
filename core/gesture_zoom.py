@@ -109,7 +109,11 @@ class GestureZoomTracker:
         self.zoom_sensitivity: float = float(getattr(settings, "zoom_sensitivity", 1.0))
         self.smile_sensitivity: float = float(getattr(settings, "smile_sensitivity", 1.0))
         self.zoom_cooldown_sec: float = float(settings.zoom_cooldown_sec)
-        self.scroll_cooldown_sec: float = float(getattr(settings, "scroll_cooldown_sec", 0.25))
+        self.scroll_cooldown_sec: float = float(getattr(settings, "scroll_cooldown_sec", 0.20))
+        self.continuous_scroll: bool = bool(getattr(settings, "continuous_scroll", True))
+        self.activation_grace_frames: int = int(getattr(settings, "activation_grace_frames", 1))
+        self.deactivation_grace_sec: float = float(getattr(settings, "deactivation_grace_sec", 0.08))
+        self.face_loss_grace_sec: float = float(getattr(settings, "face_loss_grace_sec", 0.08))
 
         # Baseline resting ratios normalized by IOD
         self.left_eyebrow_baseline: float = float(settings.left_eyebrow_baseline)
@@ -122,6 +126,13 @@ class GestureZoomTracker:
         self.scroll_mode_active: bool = False
         self.zoom_mode_active: bool = False
         self.teeth_visible: bool = False
+
+        # Temporal stability & debounce tracking
+        self._candidate_smile_frames: int = 0
+        self._last_face_time: float | None = None
+        self._last_teeth_time: float | None = None
+        self._eyebrow_raise_start_time: float | None = None
+        self._last_valid_metrics: tuple[float, float, float, float] | None = None
 
         # Live eyebrow states
         self.left_eb_state: str = STATE_NORMAL
@@ -256,6 +267,11 @@ class GestureZoomTracker:
         self.step_ready = True
         self.last_action = None
         self.last_reject_reason = "NONE"
+        self._candidate_smile_frames = 0
+        self._last_face_time = None
+        self._last_teeth_time = None
+        self._eyebrow_raise_start_time = None
+        self._last_valid_metrics = None
 
     def update(
         self,
@@ -282,10 +298,18 @@ class GestureZoomTracker:
             has_face = bool(landmarks_data.get("has_face", False))
             lm_list = landmarks_data.get("landmarks", [])
 
+        # Face loss safety with brief landmark-drop grace period
         if not has_face or len(lm_list) == 0:
-            # Face loss safety: immediately turn OFF both scroll and zoom modes
-            self.reset()
-            return self._build_status(None, 0, None, relative_dy, reject_reason="FACE_LOST")
+            elapsed_lost = (timestamp - self._last_face_time) if self._last_face_time is not None else 999.0
+            # If face loss persists beyond grace period, or if no gesture was active: safe reset
+            if elapsed_lost >= self.face_loss_grace_sec or not (self.scroll_mode_active or self.zoom_mode_active):
+                self.reset()
+                return self._build_status(None, 0, None, relative_dy, reject_reason="FACE_LOST")
+            else:
+                # Brief momentary dropout (e.g. single camera frame dip): suppress action but hold mode
+                return self._build_status(None, 0, None, relative_dy, reject_reason="FACE_LOST_GRACE")
+
+        self._last_face_time = timestamp
 
         if not self.enabled:
             self.reset()
@@ -298,26 +322,34 @@ class GestureZoomTracker:
             self.right_eb_ratio = r_eb
             self.mouth_width_ratio = m_w
             self.mouth_open_ratio = m_o
+            self._last_valid_metrics = (l_eb, r_eb, m_w, m_o)
+        elif self._last_valid_metrics is not None and (self.scroll_mode_active or self.zoom_mode_active):
+            l_eb, r_eb, m_w, m_o = self._last_valid_metrics
 
         # Relative stretch of mouth width relative to baseline
         base_w = max(0.35, self.mouth_width_baseline)
         stretch_ratio = self.mouth_width_ratio / base_w
+        eff_smile_sens = max(0.1, self.smile_sensitivity)
 
-        # 2. Teeth-Show Gesture Detection with Schmitt Trigger Hysteresis:
+        # 2. Teeth-Show Gesture Detection with Schmitt Trigger Hysteresis & Debounce:
         # Requires lateral corner expansion (smile) AND vertical inner lip parting (showing teeth).
-        # - Lateral expansion: stretch_ratio >= 1.12 OR mouth_width_ratio >= self.mouth_width_threshold
-        # - Inner lip separation: mouth_open_min <= mouth_open_ratio <= mouth_open_max
         # Speech has mouth_open_ratio in [0.02, 0.12] but stretch_ratio < 1.06, so speech is strictly rejected.
         reject_reason = "NONE"
 
         if not self.teeth_visible:
-            req_stretch = 1.12 / max(0.1, self.smile_sensitivity)
-            req_width = self.mouth_width_threshold / max(0.1, self.smile_sensitivity)
+            req_stretch = 1.10 / eff_smile_sens
+            req_width = self.mouth_width_threshold / eff_smile_sens
             is_wide_smile = (stretch_ratio >= req_stretch) or (self.mouth_width_ratio >= req_width)
             has_lip_separation = self.mouth_open_min <= self.mouth_open_ratio <= self.mouth_open_max
             if is_wide_smile and has_lip_separation:
-                self.teeth_visible = True
+                self._candidate_smile_frames += 1
+                if self._candidate_smile_frames >= self.activation_grace_frames:
+                    self.teeth_visible = True
+                    self._last_teeth_time = timestamp
+                else:
+                    reject_reason = "HOLDING_SMILE"
             else:
+                self._candidate_smile_frames = 0
                 if not is_wide_smile:
                     reject_reason = "MOUTH_NARROW"
                 elif self.mouth_open_ratio < self.mouth_open_min:
@@ -325,14 +357,26 @@ class GestureZoomTracker:
                 elif self.mouth_open_ratio > self.mouth_open_max:
                     reject_reason = "MOUTH_TOO_OPEN"
         else:
-            # Deactivation condition (with hysteresis margin)
-            # Closing the mouth (lips meeting) immediately deactivates gesture!
-            deact_closed = self.mouth_open_ratio < max(0.010, self.mouth_open_min - 0.008)
-            deact_width = (stretch_ratio < 1.06) and (self.mouth_width_ratio < (self.mouth_width_threshold - 0.04))
-            deact_yawn = self.mouth_open_ratio > (self.mouth_open_max + 0.04)
+            # Deactivation condition with Schmitt trigger hysteresis & temporal debounce:
+            # Closing the mouth (lips meeting) or relaxing lateral smile deactivates gesture.
+            # Perspective foreshortening during head tilt compresses vertical lip separation in 2D.
+            # A temporal grace period (deactivation_grace_sec = 0.08s = 80ms) protects against
+            # momentary single-frame or multi-frame landmark flickers during head tilt.
+            deact_closed = self.mouth_open_ratio < max(0.009, self.mouth_open_min - 0.008)
+            deact_width = (stretch_ratio < 1.05) and (self.mouth_width_ratio < (self.mouth_width_threshold - 0.04))
+            deact_yawn = self.mouth_open_ratio > (self.mouth_open_max + 0.05)
+
             if deact_closed or deact_width or deact_yawn:
-                self.teeth_visible = False
-                reject_reason = "MOUTH_CLOSED" if deact_closed else ("MOUTH_RELAXED" if deact_width else "MOUTH_TOO_OPEN")
+                elapsed_deact = (timestamp - self._last_teeth_time) if self._last_teeth_time is not None else 999.0
+                if elapsed_deact >= self.deactivation_grace_sec:
+                    self.teeth_visible = False
+                    self._candidate_smile_frames = 0
+                    self._last_teeth_time = None
+                    reject_reason = "MOUTH_CLOSED" if deact_closed else ("MOUTH_RELAXED" if deact_width else "MOUTH_TOO_OPEN")
+                else:
+                    reject_reason = "DEACT_GRACE"
+            else:
+                self._last_teeth_time = timestamp
 
         # 3. Bilateral Eyebrow Raise Detection with Schmitt Trigger Hysteresis
         high_l = self.left_eyebrow_baseline * (1.0 + self.raise_threshold)
@@ -382,11 +426,11 @@ class GestureZoomTracker:
             elif self.mode == MODE_SCROLL:
                 logger.info("GESTURE MODE: Switched to SCROLL MODE (Teeth Visible Only).")
             else:
-                logger.info("GESTURE MODE: Deactivated (Teeth not visible / mouth closed).")
+                logger.info(f"GESTURE MODE: Deactivated ({reject_reason}).")
             # Whenever mode switches, re-arm step latch
             self.step_ready = True
 
-        # 5. Mutually Exclusive Action Evaluation & Edge-Triggered Anti-Runaway
+        # 5. Mutually Exclusive Action Evaluation & Anti-Runaway
         # Never run scrolling and zooming simultaneously!
         action: str | None = None
         scroll_amount: int = 0
@@ -415,8 +459,7 @@ class GestureZoomTracker:
                     if reject_reason == "NONE":
                         reject_reason = "COOLDOWN"
             else:
-                # Anti-runaway: holding head tilted does NOT repeatedly fire zoom
-                # Return to neutral deadzone re-arms for the next zoom action
+                # Anti-runaway for zoom: return to neutral deadzone re-arms for the next zoom action
                 if abs(relative_dy) <= self.neutral_deadzone:
                     self.step_ready = True
                     if reject_reason == "NONE":
@@ -427,37 +470,68 @@ class GestureZoomTracker:
 
         elif self.mode == MODE_SCROLL:
             # SCROLL MODE: Head UP = Scroll Up, Head DOWN = Scroll Down, Head Neutral = Stop scrolling
-            if self.step_ready:
-                if (timestamp - self.last_scroll_time) >= self.scroll_cooldown_sec:
-                    eff_scroll = max(1, int(round(self.scroll_step * self.scroll_sensitivity)))
-                    if relative_dy >= self.scroll_deadzone:
+            eff_scroll = max(1, int(round(self.scroll_step * self.scroll_sensitivity)))
+
+            if relative_dy >= self.scroll_deadzone:
+                can_scroll = (timestamp - self.last_scroll_time) >= self.scroll_cooldown_sec
+                if self.continuous_scroll:
+                    if can_scroll:
                         scroll_amount = eff_scroll
                         action = SCROLL_UP
                         self.last_scroll_time = timestamp
-                        self.step_ready = False
-                        logger.info(f"SCROLL_UP step triggered (rel_dy={relative_dy:+.3f}, amount={scroll_amount}).")
-                    elif relative_dy <= -self.scroll_deadzone:
+                        self.step_ready = True
+                        logger.info(f"SCROLL_UP pulse (rel_dy={relative_dy:+.3f}, amount={scroll_amount}).")
+                    else:
+                        if reject_reason == "NONE":
+                            reject_reason = "COOLDOWN"
+                else:
+                    if self.step_ready:
+                        if can_scroll:
+                            scroll_amount = eff_scroll
+                            action = SCROLL_UP
+                            self.last_scroll_time = timestamp
+                            self.step_ready = False
+                            logger.info(f"SCROLL_UP step triggered (rel_dy={relative_dy:+.3f}, amount={scroll_amount}).")
+                        else:
+                            if reject_reason == "NONE":
+                                reject_reason = "COOLDOWN"
+                    else:
+                        if reject_reason == "NONE":
+                            reject_reason = "AWAIT_NEUTRAL"
+
+            elif relative_dy <= -self.scroll_deadzone:
+                can_scroll = (timestamp - self.last_scroll_time) >= self.scroll_cooldown_sec
+                if self.continuous_scroll:
+                    if can_scroll:
                         scroll_amount = -eff_scroll
                         action = SCROLL_DOWN
                         self.last_scroll_time = timestamp
-                        self.step_ready = False
-                        logger.info(f"SCROLL_DOWN step triggered (rel_dy={relative_dy:+.3f}, amount={scroll_amount}).")
+                        self.step_ready = True
+                        logger.info(f"SCROLL_DOWN pulse (rel_dy={relative_dy:+.3f}, amount={scroll_amount}).")
                     else:
                         if reject_reason == "NONE":
-                            reject_reason = "HEAD_NEUTRAL"
+                            reject_reason = "COOLDOWN"
                 else:
-                    if reject_reason == "NONE":
-                        reject_reason = "COOLDOWN"
+                    if self.step_ready:
+                        if can_scroll:
+                            scroll_amount = -eff_scroll
+                            action = SCROLL_DOWN
+                            self.last_scroll_time = timestamp
+                            self.step_ready = False
+                            logger.info(f"SCROLL_DOWN step triggered (rel_dy={relative_dy:+.3f}, amount={scroll_amount}).")
+                        else:
+                            if reject_reason == "NONE":
+                                reject_reason = "COOLDOWN"
+                    else:
+                        if reject_reason == "NONE":
+                            reject_reason = "AWAIT_NEUTRAL"
+
             else:
-                # Anti-runaway: holding head tilted does NOT repeatedly fire scroll
-                # Return to neutral deadzone re-arms for the next scroll action
-                if abs(relative_dy) <= self.neutral_deadzone:
-                    self.step_ready = True
-                    if reject_reason == "NONE":
-                        reject_reason = "RE_ARMED"
-                else:
-                    if reject_reason == "NONE":
-                        reject_reason = "AWAIT_NEUTRAL"
+                # Return to neutral deadzone: re-arm step latch and pause scroll pulses
+                self.step_ready = True
+                if reject_reason == "NONE":
+                    reject_reason = "HEAD_NEUTRAL"
+
         else:  # MODE_NONE
             self.step_ready = True
 

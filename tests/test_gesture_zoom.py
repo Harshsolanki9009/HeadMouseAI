@@ -468,13 +468,13 @@ def test_part2_never_run_scrolling_and_zooming_simultaneously():
 
 
 def test_part2_anti_runaway_scroll_and_zoom_while_head_held():
-    """Requirement: Prevent repeated rapid scroll/zoom actions while the head is held in one direction."""
-    tracker = GestureZoomTracker(ZoomSettings(zoom_deadzone=0.022, scroll_deadzone=0.020, neutral_deadzone=0.012))
+    """Requirement: Prevent repeated rapid scroll/zoom actions while the head is held in one direction (step-latch mode)."""
+    tracker = GestureZoomTracker(ZoomSettings(zoom_deadzone=0.022, scroll_deadzone=0.020, neutral_deadzone=0.012, continuous_scroll=False))
 
     scroll_frame = make_face_landmarks(left_eb_dist=0.040, right_eb_dist=0.040, mouth_width=0.200, lip_open=0.020)
     zoom_frame = make_face_landmarks(left_eb_dist=0.050, right_eb_dist=0.050, mouth_width=0.200, lip_open=0.020)
 
-    # 1. Anti-runaway for SCROLL
+    # 1. Anti-runaway for SCROLL (step-latch mode)
     t = 600.0
     s1 = tracker.update(scroll_frame, relative_dy=0.035, timestamp=t)
     assert s1["action"] == SCROLL_UP
@@ -512,6 +512,104 @@ def test_part2_anti_runaway_scroll_and_zoom_while_head_held():
     z4 = tracker.update(zoom_frame, relative_dy=0.005, timestamp=t + 0.60)
     assert z4["action"] is None
     assert tracker.step_ready
+
+
+def test_part2_continuous_scroll_while_head_held():
+    """Requirement 4: Smooth rate-limited continuous scrolling while head is held tilted."""
+    tracker = GestureZoomTracker(ZoomSettings(
+        scroll_deadzone=0.020,
+        scroll_cooldown_sec=0.20,
+        continuous_scroll=True,
+        scroll_step=2,
+    ))
+    scroll_frame = make_face_landmarks(left_eb_dist=0.040, right_eb_dist=0.040, mouth_width=0.200, lip_open=0.020)
+
+    t = 800.0
+    # 1. First tilt UP fires initial scroll pulse
+    s1 = tracker.update(scroll_frame, relative_dy=0.035, timestamp=t)
+    assert s1["mode"] == MODE_SCROLL
+    assert s1["action"] == SCROLL_UP
+    assert s1["scroll_amount"] == 2
+
+    # 2. 50ms later (during cooldown): rate-limiting suppresses action to prevent runaway flooding
+    s2 = tracker.update(scroll_frame, relative_dy=0.038, timestamp=t + 0.05)
+    assert s2["action"] is None
+    assert s2["scroll_amount"] == 0
+    assert s2["reject_reason"] == "COOLDOWN"
+
+    # 3. 250ms later (after 0.20s cooldown): continuous scrolling fires second pulse smoothly
+    s3 = tracker.update(scroll_frame, relative_dy=0.036, timestamp=t + 0.25)
+    assert s3["action"] == SCROLL_UP
+    assert s3["scroll_amount"] == 2
+
+    # 4. Another 250ms later: fires third pulse smoothly
+    s4 = tracker.update(scroll_frame, relative_dy=0.035, timestamp=t + 0.50)
+    assert s4["action"] == SCROLL_UP
+    assert s4["scroll_amount"] == 2
+
+    # 5. Head returns to neutral: scrolling cleanly stops, but Scroll Mode stays active
+    s5 = tracker.update(scroll_frame, relative_dy=0.005, timestamp=t + 0.60)
+    assert s5["mode"] == MODE_SCROLL
+    assert s5["action"] is None
+    assert s5["scroll_amount"] == 0
+
+    # 6. Head tilts DOWN: continuous scrolling fires downward pulse
+    s6 = tracker.update(scroll_frame, relative_dy=-0.035, timestamp=t + 0.75)
+    assert s6["mode"] == MODE_SCROLL
+    assert s6["action"] == SCROLL_DOWN
+    assert s6["scroll_amount"] == -2
+
+
+def test_part2_brief_landmark_loss_grace_recovery():
+    """Requirement 5: Brief single-frame landmark loss does not kill Scroll Mode."""
+    tracker = GestureZoomTracker(ZoomSettings(face_loss_grace_sec=0.08))
+    active_frame = make_face_landmarks(mouth_width=0.200, lip_open=0.020, left_eb_dist=0.040, right_eb_dist=0.040)
+    lost_frame = {"has_face": False, "landmarks": []}
+
+    t = 850.0
+    # Step 1: In Scroll Mode
+    s1 = tracker.update(active_frame, relative_dy=0.030, timestamp=t)
+    assert s1["mode"] == MODE_SCROLL
+    assert s1["scroll_mode_active"]
+
+    # Step 2: 33ms single-frame camera dropout (e.g. MediaPipe momentary miss)
+    s2 = tracker.update(lost_frame, relative_dy=0.030, timestamp=t + 0.033)
+    assert s2["mode"] == MODE_SCROLL, "Single dropped frame must NOT kill Scroll Mode!"
+    assert s2["scroll_mode_active"]
+    assert s2["action"] is None
+    assert s2["reject_reason"] == "FACE_LOST_GRACE"
+
+    # Step 3: Next frame (66ms) face recovered -> scrolling resumes without re-arming
+    s3 = tracker.update(active_frame, relative_dy=0.030, timestamp=t + 0.066)
+    assert s3["mode"] == MODE_SCROLL
+    assert s3["scroll_mode_active"]
+
+
+def test_part2_head_tilt_lip_compression_hysteresis_grace():
+    """Requirement 1 & 2: Vertical lip compression during head tilt does not drop Scroll Mode."""
+    tracker = GestureZoomTracker(ZoomSettings(mouth_open_min=0.018))
+    iod = 0.250
+
+    # Wide smile with normal lip separation: 0.020 / 0.250 = 0.080
+    smile_frame = make_face_landmarks(mouth_width=0.200, lip_open=0.020, iod=iod)
+    # Head tilts up: 2D perspective compresses vertical lip separation to 0.009 (0.00225 / 0.250)
+    tilted_up_frame = make_face_landmarks(mouth_width=0.200, lip_open=0.00225, iod=iod)
+
+    t = 880.0
+    # Step 1: Engage Scroll Mode
+    s1 = tracker.update(smile_frame, relative_dy=0.0, timestamp=t)
+    assert s1["mode"] == MODE_SCROLL
+    assert s1["teeth_visible"]
+
+    # Step 2: Head tilts UP at 33ms -> vertical lip height compresses
+    s2 = tracker.update(tilted_up_frame, relative_dy=0.035, timestamp=t + 0.033)
+    assert s2["teeth_visible"], "Head tilt lip compression must NOT immediately drop teeth_visible!"
+    assert s2["mode"] == MODE_SCROLL
+
+    # Step 3: Head tilt continues at 66ms
+    s3 = tracker.update(tilted_up_frame, relative_dy=0.035, timestamp=t + 0.066)
+    assert s3["teeth_visible"]
+    assert s3["mode"] == MODE_SCROLL
 
 
 def test_part2_normal_talking_does_not_activate_either_mode():

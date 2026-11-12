@@ -2,9 +2,9 @@
 ; HeadMouseAI Professional Windows Installer - Phase 11 Public Release
 
 #define MyAppName "HeadMouseAI"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.0-beta.2"
 #define MyAppPublisher "ACROPOLIANS"
-#define MyAppURL "https://github.com/HeadMouseAI"
+#define MyAppURL "https://github.com/Harshsolanki9009/HeadMouseAI"
 #define MyAppExeName "HeadMouseAI.exe"
 
 [Setup]

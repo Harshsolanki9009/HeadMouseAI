@@ -1,6 +1,6 @@
 # HeadMouseAI
 
-[![Version](https://img.shields.io/badge/version-v1.0.0--beta.1-blue.svg)](https://github.com/HeadMouseAI)
+[![Version](https://img.shields.io/badge/version-v1.0.0--beta.2-blue.svg)](https://github.com/Harshsolanki9009/HeadMouseAI)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011%20(64--bit)-0078D6.svg)](https://www.microsoft.com/windows)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.14-3776AB.svg)](https://www.python.org/)
 [![UI Framework](https://img.shields.io/badge/GUI-PySide6%20(Qt6)-41CD52.svg)](https://www.qt.io/)
@@ -37,8 +37,10 @@
 - **Click Position Stabilization**: Cursors lock into place during intentional winks for high targeting precision.
 - **Hands-Free Drag & Drop**: Holding your left eye closed for $>0.38\text{ s}$ engages drag mode; an eye open or subsequent wink cleanly drops the selection.
 - **Hands-Free Scroll & Zoom**:
-  - Eyebrow raise + vertical head motion enables continuous document/web scrolling.
-  - Subtle smile/teeth gesture + vertical head motion activates smooth zoom magnification.
+  - **Smile / Teeth Show**: Activates continuous hands-free Scroll Mode (Head UP = Scroll Up, Head DOWN = Scroll Down, Neutral = Stop).
+  - **Smile + Both Eyebrows Raised**: Switches seamlessly to Zoom Mode (Head UP = Zoom In, Head DOWN = Zoom Out).
+  - **Automatic Resumption**: Lowering eyebrows returns automatically to Scroll Mode.
+  - **Hysteresis & Grace**: Debounced against facial micro-movements, lip perspective compression, and brief frame drops.
 - **Guided 4-Step Calibration**: Interactive calibration wizard with live camera preview calibrating resting center and eye baselines in under 20 seconds.
 - **Safety Interlocks by Default**:
   - **Real Mouse strictly DISABLED by default** upon launching.
@@ -66,7 +68,7 @@
 ### 3. Running from Source (Developers)
 ```powershell
 # Clone the repository
-git clone https://github.com/HeadMouseAI/HeadMouseAI.git
+git clone https://github.com/Harshsolanki9009/HeadMouseAI.git
 cd HeadMouseAI
 
 # Set up virtual environment

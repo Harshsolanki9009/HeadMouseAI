@@ -346,6 +346,8 @@ def test_calibration_wizard_step_transitions_and_sampling():
         assert applied[0]["left_baseline_ear"] == 0.28
 
         wizard.close()
+        wizard.deleteLater()
+        app.processEvents()
         worker.stop()
 
 
@@ -368,6 +370,8 @@ def test_calibration_wizard_cancellation_safety():
         assert worker.settings.eye_blink.left_baseline_ear == orig_lear
 
         wizard.close()
+        wizard.deleteLater()
+        app.processEvents()
         worker.stop()
 
 

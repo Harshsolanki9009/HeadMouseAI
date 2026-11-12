@@ -68,12 +68,23 @@ class VideoWidget(QWidget):
         # Dynamic action banner
         last_zoom = telemetry.get("last_zoom_action")
         last_scroll = telemetry.get("last_scroll_action")
+        head_dir = telemetry.get("head_direction") or "NEUTRAL"
         if self._mode == "ZOOM":
-            step = telemetry.get("gesture_action") or ("Ready" if telemetry.get("gesture_step_ready") else "Neutral")
-            self._action_banner = f"Zoom Mode: {step}"
+            act = telemetry.get("gesture_action") or last_zoom
+            if act and act in ("ZOOM_IN", "ZOOM_OUT"):
+                self._action_banner = f"Zoom Mode: {act}"
+            elif head_dir != "NEUTRAL":
+                self._action_banner = f"Zoom Mode: Tilting {head_dir}"
+            else:
+                self._action_banner = "Zoom Mode: Active (Tilt Head)"
         elif self._mode == "SCROLL":
-            act = telemetry.get("gesture_action") or ("Ready" if telemetry.get("gesture_step_ready") else "Stopped")
-            self._action_banner = f"Scroll Mode: {act}"
+            act = telemetry.get("gesture_action") or last_scroll
+            if act and act in ("SCROLL_UP", "SCROLL_DOWN"):
+                self._action_banner = f"Scroll Mode: {act}"
+            elif head_dir != "NEUTRAL":
+                self._action_banner = f"Scroll Mode: Tilting {head_dir}"
+            else:
+                self._action_banner = "Scroll Mode: Active (Tilt Head)"
         elif last_zoom:
             self._action_banner = f"Zoom: {last_zoom}"
         elif last_scroll:

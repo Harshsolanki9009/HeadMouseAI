@@ -163,6 +163,10 @@ class ZoomSettings:
     scroll_sensitivity: float = 1.0       # Adjustable scroll sensitivity
     zoom_sensitivity: float = 1.0         # Adjustable zoom sensitivity
     smile_sensitivity: float = 1.0        # Smile / teeth gesture activation sensitivity factor
+    continuous_scroll: bool = True        # Continuous scrolling while head is held tilted
+    activation_grace_frames: int = 1      # Consecutive frames candidate smile must hold to activate
+    deactivation_grace_sec: float = 0.08  # Baseline grace period before deactivating on mouth closure
+    face_loss_grace_sec: float = 0.08     # Grace period before resetting on face loss
     left_eyebrow_baseline: float = 0.16
     right_eyebrow_baseline: float = 0.16
     mouth_width_baseline: float = 0.52

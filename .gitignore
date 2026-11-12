@@ -69,3 +69,12 @@ screenshots_redesign/
 
 # TOML generated settings
 config.toml
+
+# Environment & Credentials
+.env
+*.env
+.env.*
+*.pem
+*.key
+credentials*
+secrets*

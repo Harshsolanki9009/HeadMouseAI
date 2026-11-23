@@ -87,21 +87,22 @@ def test_calibration_preserves_state():
         return False
 
 
-def test_settings_save_load():
+def test_settings_save_load(tmp_path=None):
     """Test that settings can be saved and loaded correctly."""
+    target_path = "test_temp_config.toml"
     try:
         # Create modified settings
-        modified = AppSettings.load()
+        modified = AppSettings()
         modified.nose_tracking.sensitivity = 5.0
         modified.nose_tracking.dead_zone = 10.0
         modified.eye_blink.left_eye_ear_threshold = 0.18
         modified.eye_blink.right_eye_ear_threshold = 0.19
 
-        # Save
-        modified.save()
+        # Save to temp file
+        modified.save(target_path)
 
-        # Load
-        loaded = AppSettings.load()
+        # Load from temp file
+        loaded = AppSettings.load(target_path)
 
         if loaded.nose_tracking.sensitivity == 5.0 and \
            loaded.nose_tracking.dead_zone == 10.0 and \
@@ -118,6 +119,12 @@ def test_settings_save_load():
         import traceback
         traceback.print_exc()
         return False
+    finally:
+        if os.path.exists(target_path):
+            try:
+                os.remove(target_path)
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

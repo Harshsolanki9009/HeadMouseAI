@@ -39,8 +39,16 @@ class MouseController:
             settings: Mouse control settings dataclass.
             py_backend: Optional backend (defaults to pyautogui, allows mocking for tests).
         """
-        if settings is None:
+        if hasattr(screen_width, "mouse") or isinstance(screen_width, MouseControlSettings):
+            if hasattr(screen_width, "mouse"):
+                settings = screen_width.mouse
+            else:
+                settings = screen_width
+            screen_width = None
+        elif settings is None:
             settings = get_settings().mouse
+        elif hasattr(settings, "mouse"):
+            settings = settings.mouse
 
         self.settings = settings
         self.pyautogui = py_backend if py_backend is not None else pyautogui
@@ -98,6 +106,7 @@ class MouseController:
         self.is_mouse_down: bool = False
         self.is_dragging: bool = False
         self.is_scrolling: bool = False
+        self.is_paused: bool = False
 
         # Position lock / Click stabilization state
         self.position_locked: bool = False
@@ -140,11 +149,32 @@ class MouseController:
             return False, "EMERGENCY_STOP"
         if not self.enabled:
             return False, "DISABLED"
+        if self.is_paused:
+            return False, "PAUSED"
         if not self.is_calibrated:
             return False, "UNCALIBRATED"
         if not self.has_face:
             return False, "FACE_LOST"
         return True, "OPERATIONAL"
+
+    def pause(self) -> None:
+        """Pause cursor movement safely releasing held buttons without clearing calibration."""
+        self.unlock_position()
+        self.release_all_buttons()
+        self.is_paused = True
+        self.last_action = "PAUSED"
+        self.last_action_time = time.monotonic()
+        logger.info("REAL MOUSE PAUSED")
+
+    def resume(self) -> bool:
+        """Resume cursor movement if previously enabled and calibrated."""
+        self.is_paused = False
+        if self.enabled and self.is_calibrated and self.has_face:
+            self.last_action = "RESUMED"
+            self.last_action_time = time.monotonic()
+            logger.info("REAL MOUSE RESUMED")
+            return True
+        return False
 
     def enable(self) -> bool:
         """Enable real mouse control if safety conditions are satisfied.
@@ -569,6 +599,7 @@ class MouseController:
             "is_mouse_down": self.is_mouse_down,
             "is_dragging": self.is_dragging,
             "is_scrolling": self.is_scrolling,
+            "is_paused": self.is_paused,
             "position_locked": self.position_locked,
             "failsafe_triggered": self.failsafe_triggered,
         }

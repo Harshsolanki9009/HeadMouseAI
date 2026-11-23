@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="inkGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F2F0EA"/>
+      <stop offset="50%" stop-color="#B9C0C7"/>
+      <stop offset="100%" stop-color="#777F87"/>
+    </linearGradient>
+    <radialGradient id="haloGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#222529" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#17191C" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- Background Glow -->
+  <circle cx="60" cy="60" r="54" fill="url(#haloGlow)"/>
+  <!-- Outer Precision Ring -->
+  <circle cx="60" cy="60" r="48" fill="none" stroke="#34383D" stroke-width="2"/>
+  <!-- Stylized Ink Wash Eye / Aperture Arc -->
+  <path d="M 24 60 C 38 34, 82 34, 96 60 C 82 86, 38 86, 24 60 Z" fill="none" stroke="url(#inkGradient)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Central Pupil / AI Node -->
+  <circle cx="60" cy="60" r="14" fill="#222529" stroke="#F2F0EA" stroke-width="2.5"/>
+  <circle cx="60" cy="60" r="6" fill="#F2F0EA"/>
+  <!-- Subtle North/South/East/West Calibration Ticks -->
+  <line x1="60" y1="6" x2="60" y2="16" stroke="#B9C0C7" stroke-width="2" stroke-linecap="round"/>
+  <line x1="60" y1="104" x2="60" y2="114" stroke="#B9C0C7" stroke-width="2" stroke-linecap="round"/>
+  <line x1="6" y1="60" x2="16" y2="60" stroke="#B9C0C7" stroke-width="2" stroke-linecap="round"/>
+  <line x1="104" y1="60" x2="114" y2="60" stroke="#B9C0C7" stroke-width="2" stroke-linecap="round"/>
+</svg>

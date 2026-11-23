@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200">
+  <defs>
+    <linearGradient id="welGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#222529"/>
+      <stop offset="100%" stop-color="#17191C"/>
+    </linearGradient>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="60%" stop-color="#F2F0EA"/>
+      <stop offset="100%" stop-color="#B9C0C7"/>
+    </linearGradient>
+    <radialGradient id="welGlow" cx="80%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#34383D" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#17191C" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="640" height="200" rx="12" fill="url(#welGrad)"/>
+  <rect width="640" height="200" rx="12" fill="url(#welGlow)"/>
+
+  <!-- Left Side: Typography & Tagline -->
+  <text x="44" y="65" font-family="'Segoe UI', sans-serif" font-size="28" font-weight="700" fill="url(#textGrad)" letter-spacing="1">JADOO</text>
+  <rect x="156" y="47" width="92" height="22" rx="11" fill="#34383D"/>
+  <text x="202" y="62" font-family="'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#89958C" text-anchor="middle" letter-spacing="0.5">WINDOWS AI</text>
+
+  <text x="44" y="96" font-family="'Segoe UI', sans-serif" font-size="14" font-weight="500" fill="#F2F0EA">Hands-Free Accessibility &amp; Autonomous Desktop Assistant</text>
+  <text x="44" y="122" font-family="'Segoe UI', sans-serif" font-size="12" fill="#777F87">Operate your entire PC using head movement, facial gestures, and voice.</text>
+
+  <!-- Capability Pills -->
+  <g transform="translate(44, 142)">
+    <rect width="116" height="26" rx="13" fill="#222529" stroke="#34383D" stroke-width="1"/>
+    <circle cx="16" cy="13" r="4" fill="#F2F0EA"/>
+    <text x="64" y="17" font-family="'Segoe UI', sans-serif" font-size="10" fill="#B9C0C7" text-anchor="middle">Nose Cursor</text>
+  </g>
+  <g transform="translate(170, 142)">
+    <rect width="124" height="26" rx="13" fill="#222529" stroke="#34383D" stroke-width="1"/>
+    <circle cx="16" cy="13" r="4" fill="#89958C"/>
+    <text x="68" y="17" font-family="'Segoe UI', sans-serif" font-size="10" fill="#B9C0C7" text-anchor="middle">Cloud Whisper</text>
+  </g>
+  <g transform="translate(304, 142)">
+    <rect width="132" height="26" rx="13" fill="#222529" stroke="#34383D" stroke-width="1"/>
+    <circle cx="16" cy="13" r="4" fill="#C19A62"/>
+    <text x="72" y="17" font-family="'Segoe UI', sans-serif" font-size="10" fill="#B9C0C7" text-anchor="middle">agent-desktop</text>
+  </g>
+
+  <!-- Right Side: Graphic Composition -->
+  <g transform="translate(460, 20)">
+    <!-- Concentric Orbit Rings -->
+    <circle cx="80" cy="80" r="70" fill="none" stroke="#222529" stroke-width="1.5" stroke-dasharray="4,4"/>
+    <circle cx="80" cy="80" r="50" fill="none" stroke="#34383D" stroke-width="1.5"/>
+    <circle cx="80" cy="80" r="30" fill="#222529" stroke="#777F87" stroke-width="2"/>
+    <!-- Central Aperture Mark -->
+    <circle cx="80" cy="80" r="10" fill="#F2F0EA"/>
+    <!-- Crosshairs -->
+    <line x1="80" y1="20" x2="80" y2="40" stroke="#777F87" stroke-width="2" stroke-linecap="round"/>
+    <line x1="80" y1="120" x2="80" y2="140" stroke="#777F87" stroke-width="2" stroke-linecap="round"/>
+    <line x1="20" y1="80" x2="40" y2="80" stroke="#777F87" stroke-width="2" stroke-linecap="round"/>
+    <line x1="120" y1="80" x2="140" y2="80" stroke="#777F87" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

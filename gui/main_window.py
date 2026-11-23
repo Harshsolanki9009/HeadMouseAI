@@ -27,12 +27,23 @@ from config.settings import AppSettings, get_settings
 from gui.dialogs.calibration_wizard import CalibrationWizard
 from gui.styles import LIGHT_SAAS_THEME_QSS
 from gui.widgets.control_bar import ControlBarWidget
+from gui.widgets.ai_cursor_widget import AICursorWidget
+from gui.widgets.jadoo_assistant_widget import JadooAssistantWidget
 from gui.widgets.settings_tab import SettingsTabWidget
+from gui.widgets.task_agent_widget import TaskAgentWidget
 from gui.widgets.telemetry_cards import StatusBadge, TelemetryCardsWidget
 from gui.widgets.video_widget import VideoWidget
+from gui.widgets.voice_control_widget import VoiceControlWidget
+from gui.floating_panel import FloatingControlPanel
 from gui.worker import VisionWorker
+from jadoo_assistant.assistant_worker import JadooWorker
+from task_agent.task_manager import TaskManager
 from utils.logger import logger
 from utils.resource import get_icon_path
+from voice_engine.command_registry import AccessibilityCommand
+from voice_engine.keyboard_controller import KeyboardActionController
+from voice_engine.text_injector import TextInjector
+from voice_engine.voice_worker import VoiceWorker
 
 VK_F8 = 0x77
 VK_F9 = 0x78
@@ -131,6 +142,15 @@ class MainWindow(QMainWindow):
 
         # Subsystems
         self.worker: Optional[VisionWorker] = None
+        self.voice_worker: Optional[VoiceWorker] = None
+        self.jadoo_worker: Optional[JadooWorker] = None
+        self.text_injector: Optional[TextInjector] = None
+        self.jadoo_widget: Optional[JadooAssistantWidget] = None
+        self.ai_cursor_widget: Optional[AICursorWidget] = None
+        self.task_agent_widget: Optional[TaskAgentWidget] = None
+        self.task_manager: Optional[TaskManager] = None
+        self.keyboard_controller: KeyboardActionController = KeyboardActionController()
+        self.floating_panel: Optional[FloatingControlPanel] = None
         self._prev_f8: bool = False
         self._prev_f9: bool = False
         self._last_f8_trigger_time: float = 0.0
@@ -197,6 +217,14 @@ class MainWindow(QMainWindow):
         self.hdr_badge_mouse.setFixedWidth(96)
         hdr_layout.addWidget(self.hdr_badge_mouse)
 
+        self.hdr_badge_voice = StatusBadge("VOICE: IDLE")
+        self.hdr_badge_voice.setFixedWidth(100)
+        hdr_layout.addWidget(self.hdr_badge_voice)
+
+        self.hdr_badge_jadoo = StatusBadge("JADOO IDLE")
+        self.hdr_badge_jadoo.setFixedWidth(100)
+        hdr_layout.addWidget(self.hdr_badge_jadoo)
+
         main_layout.addWidget(hdr)
 
         # ---------------- Tabbed Navigation (Clean Top Bar) ---------------- #
@@ -219,6 +247,15 @@ class MainWindow(QMainWindow):
         self.settings_tab.sig_toggle_mesh.connect(self._on_toggle_mesh)
         self.settings_tab.sig_toggle_cursor.connect(self._on_toggle_cursor)
         self.settings_tab.sig_run_wizard.connect(self._on_calibrate_requested)
+        self.settings_tab.sig_voice_mic_changed.connect(self._on_voice_mic_changed)
+        self.settings_tab.sig_voice_model_changed.connect(self._on_voice_model_changed)
+        self.settings_tab.sig_voice_lang_changed.connect(self._on_voice_lang_changed)
+        self.settings_tab.sig_voice_enabled_changed.connect(self._on_voice_enabled_changed)
+        self.settings_tab.sig_voice_threshold_changed.connect(self._on_voice_threshold_changed)
+        self.settings_tab.sig_groq_key_changed.connect(self._on_groq_key_changed)
+        self.settings_tab.sig_gemini_key_changed.connect(self._on_gemini_key_changed)
+        self.settings_tab.sig_stt_mode_changed.connect(self._on_stt_mode_changed)
+        self.settings_tab.sig_tts_toggled.connect(self._on_tts_toggled)
         self.tabs.addTab(self.settings_tab, "Settings")
 
         # Tab 4: Help
@@ -273,7 +310,38 @@ class MainWindow(QMainWindow):
         self.control_bar.sig_reset_requested.connect(self._on_reset_requested)
         v_layout.addWidget(self.control_bar)
 
-        # 4. Expandable Advanced Details Section
+        # 4. Jadoo Voice Subsystem Card
+        self.voice_widget = VoiceControlWidget()
+        self.voice_widget.sig_toggle_dictation.connect(self._on_toggle_dictation)
+        self.voice_widget.sig_insert_text.connect(self._on_insert_dictation_text)
+        self.voice_widget.sig_language_changed.connect(self._on_voice_lang_changed)
+        self.voice_widget.set_language(getattr(self.settings.voice, "language", "en"))
+        v_layout.addWidget(self.voice_widget)
+
+        # 5. Jadoo AI Assistant Widget
+        self.jadoo_widget = JadooAssistantWidget(self.settings, self)
+        self.jadoo_widget.sig_ask_query.connect(self._on_jadoo_ask)
+        self.jadoo_widget.sig_insert_response.connect(self._on_jadoo_insert_text)
+        v_layout.addWidget(self.jadoo_widget)
+
+        # 6. Jadoo AI Cursor Control Card (HeadMouseAI)
+        self.ai_cursor_widget = AICursorWidget(self.settings, self)
+        self.ai_cursor_widget.sig_cursor_on.connect(self._on_ai_cursor_on)
+        self.ai_cursor_widget.sig_cursor_off.connect(self._on_ai_cursor_off)
+        self.ai_cursor_widget.sig_cursor_pause.connect(self._on_ai_cursor_pause)
+        self.ai_cursor_widget.sig_cursor_resume.connect(self._on_ai_cursor_resume)
+        self.ai_cursor_widget.sig_calibrate.connect(self._on_calibrate_requested)
+        self.ai_cursor_widget.sig_recenter.connect(lambda: self._on_reset_requested(confirm=False))
+        self.ai_cursor_widget.sig_open_settings.connect(lambda: self.tabs.setCurrentIndex(2))
+        self.ai_cursor_widget.sig_sensitivity_changed.connect(self._on_cursor_sensitivity_changed)
+        self.ai_cursor_widget.sig_smoothing_changed.connect(self._on_cursor_smoothing_changed)
+        v_layout.addWidget(self.ai_cursor_widget)
+
+        # 7. Autonomous AI Computer Task Agent Widget
+        self.task_agent_widget = TaskAgentWidget(None, self)
+        v_layout.addWidget(self.task_agent_widget)
+
+        # 8. Expandable Advanced Details Section
         exp_header = QHBoxLayout()
         self.btn_toggle_diagnostics = QPushButton("▼ Show Advanced Details")
         self.btn_toggle_diagnostics.setFixedHeight(28)
@@ -473,6 +541,9 @@ class MainWindow(QMainWindow):
             "<tr><td style='color: #F5F5F5; font-family: Consolas, monospace;'><b>[C]</b></td><td>Launch Calibration Wizard to calibrate head posture and eye controls.</td></tr>"
             "<tr><td style='color: #F5F5F5; font-family: Consolas, monospace;'><b>[R]</b></td><td>Reset internal trackers and state machines to defaults.</td></tr>"
             "<tr><td style='color: #F5F5F5; font-family: Consolas, monospace;'><b>[Escape]</b></td><td>Safely exit the HeadMouseAI application.</td></tr>"
+            "<tr><td style='color: #F5F5F5; font-family: Consolas, monospace;'><b>[Ctrl+Space]</b></td><td>Focus Jadoo AI Assistant input for conversational queries or Hinglish rewrite.</td></tr>"
+            "<tr><td style='color: #F5F5F5; font-family: Consolas, monospace;'><b>[Ctrl+Shift+D]</b></td><td>Toggle Hands-Free Dictation Mode ON/OFF.</td></tr>"
+            "<tr><td style='color: #6EE7B7; font-family: Consolas, monospace;'><b>'Hey Jadoo'</b></td><td>Hands-free voice wake word to activate Jadoo AI Assistant from speech.</td></tr>"
             "<tr><td style='color: #A7B0BC; font-family: Consolas, monospace;'><b>Corner Failsafe</b></td><td>Moving the physical mouse cursor to any screen corner immediately disengages automation.</td></tr>"
             "</table>"
             "</div>"
@@ -489,7 +560,7 @@ class MainWindow(QMainWindow):
         return tab
 
     def _init_worker(self) -> None:
-        """Create and connect the VisionWorker thread."""
+        """Create and connect the VisionWorker and VoiceWorker threads."""
         self.worker = VisionWorker(self.settings, self)
         self.worker.sig_frame_ready.connect(self.video_widget.update_frame)
         self.worker.sig_telemetry.connect(self._on_telemetry_received)
@@ -498,6 +569,87 @@ class MainWindow(QMainWindow):
         self.worker.sig_calibration_complete.connect(self._on_calibration_complete)
         self.worker.sig_status_message.connect(self._on_status_message)
         self.worker.sig_alert.connect(self._on_alert_received)
+
+        # Initialize Jadoo VoiceWorker thread
+        self.voice_worker = VoiceWorker(self.settings, self)
+        self.text_injector = TextInjector(restore_clipboard=self.settings.voice.restore_clipboard)
+        self.voice_worker.sig_status.connect(self._on_voice_status_changed)
+        self.voice_worker.sig_audio_level.connect(self.voice_widget.update_audio_level)
+        self.voice_worker.sig_transcription.connect(self._on_voice_transcription)
+        self.voice_worker.sig_command.connect(self._on_voice_command)
+        self.voice_worker.sig_error.connect(self._on_voice_error)
+        self.voice_worker.sig_dictation_state.connect(self.voice_widget.set_dictating_state)
+        self.voice_worker.sig_wake_word.connect(self._on_wake_word_detected)
+        self.voice_worker.sig_engine_used.connect(self.voice_widget.set_engine)
+
+        # Initialize dashboard engine badge to reflect configured provider & key state
+        stt_mode = getattr(self.settings.jadoo, "stt_mode", "cloud_first") if hasattr(self.settings, "jadoo") else "cloud_first"
+        if stt_mode == "offline":
+            self.voice_widget.set_engine("LOCAL WHISPER")
+        elif not self.voice_worker.whisper.groq_client.is_configured:
+            self.voice_widget.set_engine("API KEY MISSING")
+        else:
+            self.voice_widget.set_engine("LOCAL WHISPER")
+
+        if getattr(self.settings.voice, "enabled", True):
+            self.voice_worker.start()
+
+        # Initialize Jadoo AI Assistant worker
+        self.jadoo_worker = JadooWorker(self.settings, self)
+        self.jadoo_worker.sig_jadoo_status.connect(self._on_jadoo_status_changed)
+        if self.jadoo_widget:
+            self.jadoo_worker.sig_jadoo_response.connect(self.jadoo_widget.set_response)
+            self.jadoo_worker.sig_jadoo_error.connect(self.jadoo_widget.set_error)
+        self.jadoo_worker.sig_speaking_state.connect(self._on_jadoo_speaking_state)
+        self.jadoo_worker.start()
+
+        # Initialize Always-On-Top Floating Accessibility Control Panel
+        self.floating_panel = FloatingControlPanel(self.settings, None)
+        self.voice_worker.sig_dictation_state.connect(self.floating_panel.update_dictation_state)
+        self.voice_worker.sig_mode_changed.connect(self.floating_panel.update_mode_badge)
+
+        self.floating_panel.sig_command_requested.connect(self._on_voice_command)
+        self.floating_panel.sig_toggle_dictation.connect(self._on_panel_toggle_dictation)
+        self.floating_panel.sig_toggle_listening.connect(self._on_panel_toggle_listening)
+        self.floating_panel.sig_toggle_mouse.connect(self._on_toggle_real_mouse)
+        self.floating_panel.sig_scroll.connect(self._on_panel_scroll)
+        self.floating_panel.sig_stop_all.connect(self._on_emergency_stop)
+        self.floating_panel.sig_open_assistant.connect(self._on_ctrl_space_pressed)
+
+        # Wire Floating Panel Phase 4 AI Cursor signals
+        self.floating_panel.sig_cursor_on.connect(self._on_ai_cursor_on)
+        self.floating_panel.sig_cursor_off.connect(self._on_ai_cursor_off)
+        self.floating_panel.sig_cursor_pause.connect(self._on_ai_cursor_pause)
+        self.floating_panel.sig_cursor_resume.connect(self._on_ai_cursor_resume)
+        self.floating_panel.sig_calibrate_cursor.connect(self._on_calibrate_requested)
+        self.floating_panel.sig_recenter_cursor.connect(lambda: self._on_reset_requested(confirm=False))
+
+        # Initialize TaskManager (Phase 5 Autonomous Task Agent)
+        gemini_client = getattr(self.jadoo_worker, "gemini", None) if hasattr(self, "jadoo_worker") and self.jadoo_worker else None
+        self.task_manager = TaskManager(
+            gemini_client=gemini_client,
+            vision_worker=self.worker,
+            keyboard_controller=self.keyboard_controller,
+            parent=self,
+        )
+        if self.task_agent_widget:
+            self.task_agent_widget.task_manager = self.task_manager
+            self.task_agent_widget._connect_manager()
+
+        # Connect Task Agent signals to UI updates
+        self.task_manager.sig_status_changed.connect(self._on_task_status_changed)
+        self.task_manager.sig_task_completed.connect(self._on_task_completed)
+
+        # Wire Floating Panel Phase 5 Task Agent signals
+        self.floating_panel.sig_submit_task.connect(self._on_submit_task)
+        self.floating_panel.sig_stop_task.connect(self._on_stop_task)
+
+        if hasattr(self, "settings_tab") and self.settings_tab:
+            self.settings_tab.sig_show_floating_panel.connect(self._toggle_floating_panel_visibility)
+            self.settings_tab.sig_floating_panel_toggled.connect(self._on_settings_panel_toggled)
+
+        if getattr(self.settings.accessibility, "auto_show_panel", True):
+            self.floating_panel.show()
 
     def _init_hotkeys(self) -> None:
         """Initialize unified window shortcuts and background hardware polling."""
@@ -525,6 +677,16 @@ class MainWindow(QMainWindow):
         self.shortcut_r = QShortcut(QKeySequence(Qt.Key.Key_R), self)
         self.shortcut_r.setContext(Qt.ShortcutContext.WindowShortcut)
         self.shortcut_r.activated.connect(self._on_reset_requested)
+
+        # Dictation shortcut: Ctrl+Shift+D
+        self.shortcut_dictation = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
+        self.shortcut_dictation.setContext(Qt.ShortcutContext.WindowShortcut)
+        self.shortcut_dictation.activated.connect(self._on_toggle_dictation)
+
+        # Jadoo Assistant shortcut: Ctrl+Space
+        self.shortcut_ctrl_space = QShortcut(QKeySequence("Ctrl+Space"), self)
+        self.shortcut_ctrl_space.setContext(Qt.ShortcutContext.WindowShortcut)
+        self.shortcut_ctrl_space.activated.connect(self._on_ctrl_space_pressed)
 
         self.shortcut_esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self.shortcut_esc.setContext(Qt.ShortcutContext.WindowShortcut)
@@ -622,11 +784,23 @@ class MainWindow(QMainWindow):
 
         if self.worker:
             self.worker.trigger_emergency_stop()
+        if self.jadoo_worker:
+            self.jadoo_worker.abort()
+        if hasattr(self, "task_manager") and self.task_manager:
+            self.task_manager.stop_task()
+        if self.voice_worker and self.voice_worker.is_dictating:
+            self.voice_worker.set_dictating(False)
+        if hasattr(self, "floating_panel") and self.floating_panel:
+            self.floating_panel.update_mode_badge("STOPPED")
 
     @Slot(bool, str)
     def _on_mouse_state_changed(self, enabled: bool, state_label: str) -> None:
         """Immediately update all UI indicators when mouse state changes."""
         self.control_bar.set_mouse_state(enabled, state_label)
+        if hasattr(self, "floating_panel") and self.floating_panel:
+            self.floating_panel.update_mouse_state(enabled, state_label)
+        if hasattr(self, "ai_cursor_widget") and self.ai_cursor_widget:
+            self.ai_cursor_widget.update_mouse_state(enabled, state_label)
         if state_label == "EMERGENCY_STOP":
             self.hdr_badge_mouse.set_state("EMERGENCY_STOP", "EMERGENCY")
             self.card_mouse.set_status("Emergency Stop", "ERROR")
@@ -676,6 +850,8 @@ class MainWindow(QMainWindow):
     def _on_telemetry_received(self, t: dict) -> None:
         self.video_widget.update_telemetry(t)
         self.telemetry_widget.update_telemetry(t)
+        if hasattr(self, "ai_cursor_widget") and self.ai_cursor_widget:
+            self.ai_cursor_widget.update_telemetry(t)
 
         # Header status pills
         has_face = bool(t.get("has_face", False))
@@ -763,10 +939,439 @@ class MainWindow(QMainWindow):
         if self.worker:
             self.worker.set_show_cursor(show)
 
-    def closeEvent(self, event: QCloseEvent) -> None:
-        """Clean shutdown hook: ensures camera and held mouse buttons are safely released."""
-        logger.info("MainWindow closing: shutting down VisionWorker...")
-        self.hotkey_timer.stop()
+    # ---------------- Voice Engine Handlers ---------------- #
+    @Slot()
+    def _on_toggle_dictation(self) -> None:
+        """Toggle dictation on/off."""
+        if self.voice_worker:
+            self.voice_worker.toggle_dictation()
+
+    @Slot(str)
+    def _on_insert_dictation_text(self, text: str) -> None:
+        """Inject dictation text into active target window."""
+        if self.text_injector and text:
+            ok = self.text_injector.inject_text(text)
+            if ok:
+                self.lbl_status.setText(f"Inserted dictation ({len(text)} chars) at cursor.")
+
+    @Slot(str)
+    def _on_voice_status_changed(self, status: str) -> None:
+        """Update UI badges with voice engine status."""
+        self.voice_widget.set_status(status)
+        st_u = status.upper()
+        if "DICTAT" in st_u:
+            self.hdr_badge_voice.set_state("ACTIVE", "DICTATING")
+        elif "TRANSCRIB" in st_u:
+            self.hdr_badge_voice.set_state("WARNING", "TRANSCRIBING")
+        elif "LISTEN" in st_u or "READY" in st_u:
+            self.hdr_badge_voice.set_state("OK", "VOICE ON")
+        elif "MIC" in st_u or "ERR" in st_u:
+            self.hdr_badge_voice.set_state("ERROR", "MIC ERR")
+        else:
+            self.hdr_badge_voice.set_state("NORMAL", "VOICE IDLE")
+
+    @Slot(str, str)
+    def _on_voice_transcription(self, text: str, lang: str) -> None:
+        """Handle new transcribed speech chunk."""
+        self.voice_widget.append_text(text)
+        self.lbl_status.setText(f"Dictation [{lang}]: {text[:40]}...")
+
+    @Slot(str)
+    def _on_voice_command(self, cmd_name: str) -> None:
+        """Dispatch verified voice command from strict allowlist."""
+        logger.info(f"MainWindow executing voice command: '{cmd_name}'")
+        self.lbl_status.setText(f"Voice Command Executed: [{cmd_name.upper()}]")
+
+        norm_name = cmd_name.strip().lower()
+        acc_cmd: Optional[AccessibilityCommand] = None
+        try:
+            acc_cmd = AccessibilityCommand(norm_name)
+        except ValueError:
+            pass
+
+        # 1. Text & Keyboard editing actions
+        if acc_cmd in (
+            AccessibilityCommand.BACKSPACE,
+            AccessibilityCommand.DELETE_WORD,
+            AccessibilityCommand.CLEAR_FIELD,
+            AccessibilityCommand.SELECT_ALL,
+            AccessibilityCommand.COPY,
+            AccessibilityCommand.PASTE,
+            AccessibilityCommand.ENTER,
+            AccessibilityCommand.NEW_LINE,
+            AccessibilityCommand.TAB,
+            AccessibilityCommand.UNDO,
+            AccessibilityCommand.REDO,
+        ):
+            self.keyboard_controller.execute_command(acc_cmd)
+            self._speak_feedback(acc_cmd.value.replace("_", " "))
+
+        # 2. Mouse & Navigation actions
+        elif acc_cmd == AccessibilityCommand.MOUSE_ON or norm_name in ("mouse_on", "enable_mouse"):
+            if self.worker:
+                self.worker.set_real_mouse_enabled(True)
+            self._speak_feedback("Mouse on")
+
+        elif acc_cmd == AccessibilityCommand.MOUSE_OFF or norm_name in ("mouse_off", "disable_mouse"):
+            if self.worker:
+                self.worker.set_real_mouse_enabled(False)
+            self._speak_feedback("Mouse off")
+
+        elif acc_cmd == AccessibilityCommand.PAUSE_CURSOR or norm_name == "pause_cursor":
+            if self.worker:
+                self.worker.pause_cursor()
+            self._speak_feedback("Cursor paused")
+
+        elif acc_cmd == AccessibilityCommand.RESUME_CURSOR or norm_name == "resume_cursor":
+            if self.worker:
+                self.worker.resume_cursor()
+            self._speak_feedback("Cursor resumed")
+
+        elif acc_cmd == AccessibilityCommand.CALIBRATE_CURSOR or norm_name in ("calibrate_cursor", "calibrate"):
+            self._on_calibrate_requested()
+            self._speak_feedback("Calibrating")
+
+        elif acc_cmd == AccessibilityCommand.SCROLL_UP or norm_name == "scroll_up":
+            if self.worker and self.worker.mouse_controller:
+                self.worker.mouse_controller.scroll(120)
+
+        elif acc_cmd == AccessibilityCommand.SCROLL_DOWN or norm_name == "scroll_down":
+            if self.worker and self.worker.mouse_controller:
+                self.worker.mouse_controller.scroll(-120)
+
+        elif acc_cmd == AccessibilityCommand.RECENTER or norm_name in ("recenter", "center"):
+            self._on_reset_requested(confirm=False)
+            self._speak_feedback("Recentered")
+
+        # 3. Dictation controls
+        elif acc_cmd == AccessibilityCommand.TYPING_ON or norm_name in ("start_dictation", "typing_on"):
+            if self.voice_worker:
+                self.voice_worker.set_dictating(True)
+            self._speak_feedback("Typing on")
+
+        elif acc_cmd == AccessibilityCommand.TYPING_OFF or norm_name in ("stop_dictation", "typing_off"):
+            if self.voice_worker:
+                self.voice_worker.set_dictating(False)
+            self._speak_feedback("Typing off")
+
+        # 4. Safety & Stops
+        elif acc_cmd in (AccessibilityCommand.EMERGENCY_STOP, AccessibilityCommand.STOP_ALL) or norm_name in ("emergency_stop", "stop_all"):
+            self._on_emergency_stop()
+            self._speak_feedback("Emergency stop")
+
+        elif norm_name == "stop":
+            if self.worker and self.worker.isRunning():
+                self._on_stop_tracking()
+            self._speak_feedback("Stopped")
+
+        # 5. Autonomous Task Agent Actions
+        elif acc_cmd == AccessibilityCommand.START_TASK or norm_name in ("start_task", "run_task", "start_agent"):
+            if hasattr(self, "task_manager") and self.task_manager:
+                if self.task_manager.current_plan:
+                    self.task_manager.start_task()
+                    self._speak_feedback("Task started")
+                elif self.task_agent_widget and self.task_agent_widget.inp_instruction.text().strip():
+                    self.task_manager.submit_instruction(self.task_agent_widget.inp_instruction.text().strip())
+                    self._speak_feedback("Task submitted")
+
+        elif acc_cmd == AccessibilityCommand.PAUSE_TASK or norm_name in ("pause_task", "hold_task"):
+            if hasattr(self, "task_manager") and self.task_manager:
+                self.task_manager.pause_task()
+                self._speak_feedback("Task paused")
+
+        elif acc_cmd == AccessibilityCommand.RESUME_TASK or norm_name in ("resume_task", "continue_task"):
+            if hasattr(self, "task_manager") and self.task_manager:
+                self.task_manager.resume_task()
+                self._speak_feedback("Task resumed")
+
+        elif acc_cmd == AccessibilityCommand.STOP_TASK or norm_name in ("stop_task", "abort_task", "cancel_task"):
+            if hasattr(self, "task_manager") and self.task_manager:
+                self.task_manager.stop_task()
+                self._speak_feedback("Task stopped")
+
+    # ---------------- AI Cursor Handlers (Phase 4) ---------------- #
+    @Slot()
+    def _on_ai_cursor_on(self) -> None:
+        """Start tracking and enable real mouse control."""
+        if self.worker:
+            if not self.worker.isRunning():
+                self._on_start_tracking()
+            self.worker.set_real_mouse_enabled(True)
+            self.worker.resume_cursor()
+        if self.ai_cursor_widget:
+            self.ai_cursor_widget.update_cursor_status("ACTIVE")
+        if self.floating_panel:
+            self.floating_panel.update_ai_cursor_status("ACTIVE")
+        self._speak_feedback("AI Cursor on")
+        self.lbl_status.setText("AI Cursor: ENABLED")
+
+    @Slot()
+    def _on_ai_cursor_off(self) -> None:
+        """Disable real mouse control while leaving tracking optionally active."""
+        if self.worker:
+            self.worker.set_real_mouse_enabled(False)
+        if self.ai_cursor_widget:
+            self.ai_cursor_widget.update_cursor_status("OFF")
+        if self.floating_panel:
+            self.floating_panel.update_ai_cursor_status("OFF")
+        self._speak_feedback("AI Cursor off")
+        self.lbl_status.setText("AI Cursor: DISABLED")
+
+    @Slot()
+    def _on_ai_cursor_pause(self) -> None:
+        """Pause cursor movement."""
+        if self.worker:
+            self.worker.pause_cursor()
+        if self.ai_cursor_widget:
+            self.ai_cursor_widget.set_cursor_paused(True)
+        if self.floating_panel:
+            self.floating_panel.update_ai_cursor_status("PAUSED")
+        self._speak_feedback("Cursor paused")
+        self.lbl_status.setText("AI Cursor: PAUSED")
+
+    @Slot()
+    def _on_ai_cursor_resume(self) -> None:
+        """Resume cursor movement."""
+        if self.worker:
+            self.worker.resume_cursor()
+        if self.ai_cursor_widget:
+            self.ai_cursor_widget.set_cursor_paused(False)
+        if self.floating_panel:
+            self.floating_panel.update_ai_cursor_status("ACTIVE" if self.worker and self.worker.mouse_controller.enabled else "OFF")
+        self._speak_feedback("Cursor resumed")
+        self.lbl_status.setText("AI Cursor: RESUMED")
+
+    @Slot(float)
+    def _on_cursor_sensitivity_changed(self, sens: float) -> None:
+        if self.worker:
+            self.worker.update_dynamic_settings({"sensitivity": sens})
+        self.settings.save()
+
+    @Slot(float)
+    def _on_cursor_smoothing_changed(self, smooth: float) -> None:
+        if self.worker:
+            self.worker.update_dynamic_settings({"smoothing_strength": smooth})
+        self.settings.save()
+
+    # ---------------- Task Agent Handlers (Phase 5) ---------------- #
+    @Slot(str)
+    def _on_submit_task(self, instruction: str) -> None:
+        """Submit a task to the Autonomous Task Agent."""
+        if hasattr(self, "task_manager") and self.task_manager:
+            self.task_manager.submit_instruction(instruction)
+            self.lbl_status.setText(f"Task Agent: Planning '{instruction[:30]}...'")
+
+    @Slot()
+    def _on_stop_task(self) -> None:
+        """Emergency stop the currently running task."""
+        if hasattr(self, "task_manager") and self.task_manager:
+            self.task_manager.stop_task()
+            self.lbl_status.setText("Task Agent: Stopped by user.")
+
+    def _on_task_status_changed(self, status: str) -> None:
+        if self.floating_panel:
+            self.floating_panel.update_task_status(status)
+        self.lbl_status.setText(f"Task Agent: {status}")
+
+    def _on_task_completed(self, report: dict) -> None:
+        if self.floating_panel:
+            self.floating_panel.update_task_status("COMPLETED")
+        summary = report.get("summary", "Done") if isinstance(report, dict) else str(report)
+        self.lbl_status.setText(f"Task Agent Completed: {summary[:50]}")
+        self._speak_feedback("Task completed successfully")
+
+    def _speak_feedback(self, text: str) -> None:
+        """Speak brief TTS audio confirmation if enabled in accessibility settings."""
+        if getattr(self.settings.accessibility, "tts_feedback", True):
+            if self.jadoo_worker and hasattr(self.jadoo_worker, "tts"):
+                try:
+                    self.jadoo_worker.tts.speak_async(text)
+                except Exception:
+                    pass
+
+    @Slot(bool)
+    def _on_panel_toggle_dictation(self, active: bool) -> None:
+        if self.voice_worker:
+            self.voice_worker.set_dictating(active)
+
+    @Slot(bool)
+    def _on_panel_toggle_listening(self, active: bool) -> None:
+        if self.voice_worker:
+            self.voice_worker.set_paused(not active)
+        if self.floating_panel:
+            self.floating_panel.update_listening_state(active)
+
+    @Slot(int)
+    def _on_panel_scroll(self, amount: int) -> None:
+        if self.worker and self.worker.mouse_controller:
+            self.worker.mouse_controller.scroll(amount)
+
+    @Slot()
+    def _toggle_floating_panel_visibility(self) -> None:
+        if self.floating_panel:
+            if self.floating_panel.isVisible():
+                self.floating_panel.hide()
+            else:
+                self.floating_panel.show()
+
+    @Slot(bool)
+    def _on_settings_panel_toggled(self, checked: bool) -> None:
+        if self.floating_panel:
+            if checked:
+                self.floating_panel.show()
+            else:
+                self.floating_panel.hide()
+
+    @Slot(str)
+    def _on_voice_error(self, err_msg: str) -> None:
+        """Handle voice error message."""
+        logger.warning(f"Voice engine warning/error: {err_msg}")
+        self.lbl_status.setText(f"Voice Subsystem: {err_msg}")
+
+    @Slot(int)
+    def _on_voice_mic_changed(self, dev_idx: int) -> None:
+        if self.voice_worker:
+            self.voice_worker.switch_device(dev_idx)
+
+    @Slot(str)
+    def _on_voice_model_changed(self, model_name: str) -> None:
+        if self.voice_worker:
+            self.voice_worker.switch_model(model_name)
+
+    @Slot(str)
+    def _on_voice_lang_changed(self, lang: str) -> None:
+        if self.voice_worker:
+            self.voice_worker.switch_language(lang)
+        self.settings.voice.language = lang
+        self.settings.save()
+        if hasattr(self, "settings_tab") and self.settings_tab:
+            self.settings_tab.set_voice_language(lang)
+        if hasattr(self, "voice_widget") and self.voice_widget:
+            self.voice_widget.set_language(lang)
+        self.lbl_status.setText(f"Voice typing language set to: {lang.upper()}")
+
+    @Slot(bool)
+    def _on_voice_enabled_changed(self, enabled: bool) -> None:
+        if self.voice_worker:
+            self.voice_worker.set_paused(not enabled)
+
+    @Slot(float)
+    def _on_voice_threshold_changed(self, thresh: float) -> None:
+        if self.voice_worker:
+            self.voice_worker.set_vad_threshold(thresh)
+
+    # ---------------- Jadoo Assistant Handlers ---------------- #
+    @Slot()
+    def _on_ctrl_space_pressed(self) -> None:
+        """Focus Jadoo query input when [Ctrl+Space] is pressed."""
+        self.tabs.setCurrentIndex(0)
+        if self.jadoo_widget:
+            self.jadoo_widget.focus_query_input()
+
+    @Slot(str, bool, bool)
+    def _on_jadoo_ask(self, query: str, include_screen: bool, is_rewrite: bool) -> None:
+        """Forward query to background JadooWorker."""
+        if self.jadoo_worker:
+            self.jadoo_worker.ask(query, include_screen=include_screen, is_rewrite=is_rewrite)
+
+    @Slot(str)
+    def _on_jadoo_insert_text(self, text: str) -> None:
+        """Inject Jadoo response into active external target window."""
+        if self.text_injector and text:
+            ok = self.text_injector.inject_text(text)
+            if ok:
+                self.lbl_status.setText(f"Inserted Jadoo response ({len(text)} chars) at cursor.")
+
+    @Slot(str)
+    def _on_wake_word_detected(self, query: str) -> None:
+        """Respond to 'Hey Jadoo' wake word event."""
+        logger.info(f"MainWindow received wake word event (query='{query}')")
+        self.tabs.setCurrentIndex(0)
+        if self.jadoo_widget:
+            if query.strip():
+                self.jadoo_widget.inp_query.setText(query.strip())
+                self._on_jadoo_ask(query.strip(), self.jadoo_widget.chk_screen.isChecked(), False)
+            else:
+                self.jadoo_widget.focus_query_input()
+        self.lbl_status.setText("Jadoo: Wake word detected! Listening...")
+
+    @Slot(str)
+    def _on_jadoo_status_changed(self, status: str) -> None:
+        """Update Jadoo status badge and widget state."""
+        if self.jadoo_widget:
+            self.jadoo_widget.set_status(status)
+        st_u = status.upper()
+        if "THINK" in st_u:
+            self.hdr_badge_jadoo.set_state("WARNING", "THINKING")
+        elif "ONLINE" in st_u:
+            self.hdr_badge_jadoo.set_state("OK", "JADOO ON")
+        else:
+            self.hdr_badge_jadoo.set_state("NORMAL", "JADOO IDLE")
+
+    @Slot(bool)
+    def _on_jadoo_speaking_state(self, speaking: bool) -> None:
+        """Half-duplex mic muting: pause voice capture while SAPI TTS is speaking."""
+        if self.voice_worker:
+            if speaking:
+                self.voice_worker.set_paused(True)
+            elif getattr(self.settings.voice, "enabled", True):
+                self.voice_worker.set_paused(False)
+
+    @Slot(str)
+    def _on_groq_key_changed(self, key: str) -> None:
+        if self.voice_worker:
+            self.voice_worker.set_groq_api_key(key)
+        mode = getattr(self.settings.jadoo, "stt_mode", "cloud_first") if hasattr(self.settings, "jadoo") else "cloud_first"
+        if mode == "offline":
+            self.voice_widget.set_engine("LOCAL WHISPER")
+        elif not (self.voice_worker and self.voice_worker.whisper.groq_client.is_configured):
+            self.voice_widget.set_engine("API KEY MISSING")
+        else:
+            self.voice_widget.set_engine("LOCAL WHISPER")
+
+    @Slot(str)
+    def _on_gemini_key_changed(self, key: str) -> None:
+        if self.jadoo_worker:
+            self.jadoo_worker.set_gemini_api_key(key)
+
+    @Slot(str)
+    def _on_stt_mode_changed(self, mode: str) -> None:
+        if self.voice_worker:
+            self.voice_worker.set_stt_mode(mode)
+        if mode == "offline":
+            self.voice_widget.set_engine("LOCAL WHISPER")
+        elif not (self.voice_worker and self.voice_worker.whisper.groq_client.is_configured):
+            self.voice_widget.set_engine("API KEY MISSING")
+        else:
+            self.voice_widget.set_engine("LOCAL WHISPER")
+
+    @Slot(bool)
+    def _on_tts_toggled(self, enabled: bool) -> None:
+        if self.jadoo_worker:
+            self.jadoo_worker.set_tts_enabled(enabled)
+
+    def cleanup(self) -> None:
+        """Clean shutdown hook: ensures camera, audio, timers, and worker threads are safely stopped."""
+        logger.info("MainWindow cleaning up: shutting down workers...")
+        if hasattr(self, "hotkey_timer") and self.hotkey_timer.isActive():
+            self.hotkey_timer.stop()
         if self.worker and self.worker.isRunning():
             self.worker.stop_tracking()
+        if self.voice_worker and self.voice_worker.isRunning():
+            self.voice_worker.stop()
+        if self.jadoo_worker and self.jadoo_worker.isRunning():
+            self.jadoo_worker.stop()
+        if hasattr(self, "task_manager") and self.task_manager:
+            self.task_manager.cleanup()
+        if hasattr(self, "floating_panel") and self.floating_panel:
+            self.floating_panel.close()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Clean shutdown hook: ensures camera and held mouse buttons are safely released."""
+        self.cleanup()
         event.accept()
+
+    def close(self) -> bool:
+        """Ensure cleanup runs even if window was not shown before close."""
+        self.cleanup()
+        return super().close()

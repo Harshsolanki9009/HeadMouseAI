@@ -47,7 +47,7 @@ class StatusBadge(QLabel):
             bg = "#0B2E22"
             color = "#6EE7B7"
             border = "#059669"
-        elif cat_upper in ("SCROLL", "ZOOM"):
+        elif cat_upper in ("SCROLL", "ZOOM", "LOCAL", "BLUE"):
             bg = "#1A2B4C"
             color = "#93C5FD"
             border = "#3B82F6"

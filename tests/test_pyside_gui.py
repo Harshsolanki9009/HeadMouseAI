@@ -172,13 +172,16 @@ def test_vision_worker_safety_controls():
 
 def test_main_window_lifecycle():
     """Verify MainWindow initializes tabs, widgets, and shuts down safely."""
-    with patch("core.camera.cv2.VideoCapture"), patch("core.face_landmarker.tasks.vision.FaceLandmarker.create_from_options"):
+    with patch("core.camera.cv2.VideoCapture"), \
+         patch("core.face_landmarker.tasks.vision.FaceLandmarker.create_from_options"), \
+         patch("voice_engine.audio_capture.AudioRecorder.start"):
         win = MainWindow()
         assert win.tabs.count() == 4
         assert win.video_widget is not None
         assert win.telemetry_widget is not None
         assert win.control_bar is not None
         assert win.settings_tab is not None
+        assert win.jadoo_widget is not None
 
         # Clean close
         win.close()

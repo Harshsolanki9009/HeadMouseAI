@@ -623,6 +623,23 @@ class VisionWorker(QThread):
         return ok
 
     @Slot()
+    def pause_cursor(self) -> None:
+        """Pause real mouse cursor movement without destroying calibration."""
+        self.mouse_controller.pause()
+        self.sig_mouse_state_changed.emit(False, "PAUSED")
+        self.sig_status_message.emit("INFO", "AI Cursor paused.")
+
+    @Slot()
+    def resume_cursor(self) -> bool:
+        """Resume real mouse cursor movement."""
+        ok = self.mouse_controller.resume()
+        m_stat = self.mouse_controller.get_status()
+        self.sig_mouse_state_changed.emit(m_stat["enabled"] and not m_stat["is_paused"], "ENABLED" if ok else "DISABLED")
+        if ok:
+            self.sig_status_message.emit("INFO", "AI Cursor resumed.")
+        return ok
+
+    @Slot()
     def trigger_emergency_stop(self) -> None:
         """Immediately trigger emergency stop (F9 shortcut)."""
         self.mouse_controller.emergency_stop()

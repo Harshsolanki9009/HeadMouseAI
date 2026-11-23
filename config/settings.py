@@ -208,6 +208,61 @@ class GuiSettings:
 
 
 @dataclass
+class VoiceSettings:
+    """Settings for Jadoo Voice Engine offline dictation and voice commands."""
+
+    enabled: bool = True
+    device_index: Optional[int] = None
+    model_name: str = "ggml-base.bin"
+    language: str = "en"                # "auto", "hi", "en", "hinglish"
+    threads: int = 2                   # Max 2 CPU threads
+    energy_threshold: float = 0.035     # VAD RMS energy threshold (balanced to filter room/fan noise)
+    silence_duration_s: float = 0.8     # Silence to end utterance
+    min_speech_duration_s: float = 0.22 # Minimum speech duration before sending to Whisper (allows short words)
+    max_speech_duration_s: float = 12.0 # Max recording window
+    vad_sensitivity: str = "medium"     # "low", "medium", "high"
+    auto_paste: bool = True             # Auto-paste directly into target window
+    restore_clipboard: bool = True      # Restore original clipboard text after paste
+    dictation_shortcut: str = "Ctrl+Shift+D"
+
+
+@dataclass
+class JadooSettings:
+    """Settings for Online Jadoo AI Assistant and Groq Cloud STT."""
+
+    enabled: bool = True
+    groq_api_key: str = ""
+    gemini_api_key: str = ""
+    stt_mode: str = "cloud_first"       # "cloud_first" (Default), "auto", "cloud", "offline"
+    tts_enabled: bool = False           # Windows SAPI TTS voice reply
+    model_name: str = "gemini-2.5-flash"
+    include_screen: bool = False
+    temperature: float = 0.7
+
+
+@dataclass
+class AccessibilitySettings:
+    """Settings for Jadoo hands-free accessibility control and floating panel."""
+
+    enabled: bool = True
+    panel_x: int = -1
+    panel_y: int = -1
+    panel_width: int = 280
+    panel_height: int = 580
+    compact_mode: bool = False
+    always_on_top: bool = True
+    auto_show_panel: bool = True
+    windows_startup: bool = False
+    tts_feedback: bool = True
+    button_size: str = "large"           # "medium", "large"
+    command_cooldown_s: float = 0.75
+    voice_activation: bool = True
+    auto_listen_on_start: bool = True
+    reduce_motion: bool = False
+    high_contrast: bool = True
+
+
+@dataclass
 class AppSettings:
     """Top-level settings container."""
 
@@ -219,6 +274,9 @@ class AppSettings:
     gui: GuiSettings = field(default_factory=GuiSettings)
     scroll: ScrollSettings = field(default_factory=ScrollSettings)
     zoom: ZoomSettings = field(default_factory=ZoomSettings)
+    voice: VoiceSettings = field(default_factory=VoiceSettings)
+    jadoo: JadooSettings = field(default_factory=JadooSettings)
+    accessibility: AccessibilitySettings = field(default_factory=AccessibilitySettings)
 
     @classmethod
     def load(cls, config_path: Path | str | None = None) -> AppSettings:
@@ -240,6 +298,9 @@ class AppSettings:
                     gui=_instantiate_dataclass(GuiSettings, data.get("gui", {})),
                     scroll=_instantiate_dataclass(ScrollSettings, data.get("scroll", {})),
                     zoom=_instantiate_dataclass(ZoomSettings, data.get("zoom", {})),
+                    voice=_instantiate_dataclass(VoiceSettings, data.get("voice", {})),
+                    jadoo=_instantiate_dataclass(JadooSettings, data.get("jadoo", {})),
+                    accessibility=_instantiate_dataclass(AccessibilitySettings, data.get("accessibility", {})),
                 )
                 val_errors = inst.validate()
                 if not val_errors:
@@ -264,6 +325,9 @@ class AppSettings:
             "gui": self.gui.__dict__,
             "scroll": self.scroll.__dict__,
             "zoom": self.zoom.__dict__,
+            "voice": self.voice.__dict__,
+            "jadoo": self.jadoo.__dict__,
+            "accessibility": self.accessibility.__dict__,
         }
         with open(target_file, "w", encoding="utf-8") as f:
             toml.dump(data, f)
@@ -326,6 +390,26 @@ class AppSettings:
         if not _is_valid_num(z.zoom_step) or not (1 <= z.zoom_step <= 10):
             errors.append(f"Zoom step out of range [1, 10]: {z.zoom_step}")
 
+        # Voice
+        v = self.voice
+        if v.language not in ("auto", "hi", "en", "hinglish"):
+            errors.append(f"Invalid voice language (expected 'auto', 'hi', 'en', 'hinglish'): {v.language}")
+        if not _is_valid_num(v.threads) or not (1 <= v.threads <= 2):
+            errors.append(f"Voice threads must be 1 or 2: {v.threads}")
+        if not _is_valid_num(v.energy_threshold) or not (0.001 <= v.energy_threshold <= 0.5):
+            errors.append(f"Voice energy threshold out of range [0.001, 0.5]: {v.energy_threshold}")
+        if not _is_valid_num(v.silence_duration_s) or not (0.2 <= v.silence_duration_s <= 5.0):
+            errors.append(f"Voice silence duration out of range [0.2, 5.0]: {v.silence_duration_s}")
+        if not _is_valid_num(v.min_speech_duration_s) or not (0.1 <= v.min_speech_duration_s <= 3.0):
+            errors.append(f"Voice min speech duration out of range [0.1, 3.0]: {v.min_speech_duration_s}")
+
+        # Jadoo
+        j = self.jadoo
+        if j.stt_mode not in ("cloud_first", "auto", "cloud", "offline"):
+            errors.append(f"Invalid STT mode: {j.stt_mode}")
+        if not _is_valid_num(j.temperature) or not (0.0 <= j.temperature <= 2.0):
+            errors.append(f"Jadoo temperature out of range [0.0, 2.0]: {j.temperature}")
+
         return errors
 
     def reset_to_defaults(self) -> None:
@@ -338,6 +422,8 @@ class AppSettings:
         self.gui = GuiSettings()
         self.scroll = ScrollSettings()
         self.zoom = ZoomSettings()
+        self.voice = VoiceSettings()
+        self.jadoo = JadooSettings()
         self.save()
 
     def save_profile(self, target_path: Path | str) -> bool:

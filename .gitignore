@@ -49,8 +49,10 @@ logs/
 headmouse.log
 *.log
 
-# Models (downloaded MediaPipe models, should be cached)
+# Models (downloaded MediaPipe and Whisper models)
 assets/models/*.task
+assets/models/whisper/
+assets/bin/
 
 # Test artifacts
 .coverage
@@ -74,6 +76,7 @@ config.toml
 .env
 *.env
 .env.*
+!.env.example
 *.pem
 *.key
 credentials*

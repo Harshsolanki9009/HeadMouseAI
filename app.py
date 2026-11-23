@@ -27,6 +27,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from config.settings import get_settings
+from ai_provider.groq_stt import resolve_groq_api_key
 from gui.main_window import MainWindow
 from utils.logger import logger
 from utils.resource import get_icon_path
@@ -34,6 +35,9 @@ from utils.resource import get_icon_path
 
 def main() -> int:
     """Initialize and run the PySide6 desktop application."""
+    # Synchronize environment variables from Windows Registry/file before UI initialization
+    resolve_groq_api_key()
+
     logger.info("=" * 65)
     logger.info("HEADMOUSE AI - Professional Hands-Free Desktop Controller Launch")
     logger.info("=" * 65)
@@ -57,7 +61,8 @@ def main() -> int:
     if not app_icon.isNull():
         app.setWindowIcon(app_icon)
 
-    use_splash = "--no-splash" not in sys.argv
+    use_splash = "--no-splash" not in sys.argv and "--minimized" not in sys.argv
+    start_minimized = "--minimized" in sys.argv
 
     if use_splash:
         try:
@@ -91,7 +96,11 @@ def main() -> int:
     else:
         settings = get_settings()
         window = MainWindow(settings)
-        window.show()
+        if start_minimized:
+            window.showMinimized()
+            logger.info("HeadMouseAI launched minimized in floating mode.")
+        else:
+            window.show()
 
     logger.info("HeadMouseAI desktop application presented.")
     return app.exec()

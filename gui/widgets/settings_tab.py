@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from config.settings import AppSettings, get_settings
 from utils.logger import logger
+from voice_engine.audio_capture import AudioDeviceManager
 
 
 def _make_hint(text: str) -> QLabel:
@@ -40,6 +42,18 @@ class SettingsTabWidget(QWidget):
     sig_toggle_mesh = Signal(bool)
     sig_toggle_cursor = Signal(bool)
     sig_run_wizard = Signal()
+    sig_voice_mic_changed = Signal(int)
+    sig_voice_model_changed = Signal(str)
+    sig_voice_lang_changed = Signal(str)
+    sig_voice_enabled_changed = Signal(bool)
+    sig_voice_autopaste_changed = Signal(bool)
+    sig_voice_threshold_changed = Signal(float)
+    sig_groq_key_changed = Signal(str)
+    sig_gemini_key_changed = Signal(str)
+    sig_stt_mode_changed = Signal(str)
+    sig_tts_toggled = Signal(bool)
+    sig_show_floating_panel = Signal()
+    sig_floating_panel_toggled = Signal(bool)
 
     def __init__(self, settings: Optional[AppSettings] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -295,7 +309,163 @@ class SettingsTabWidget(QWidget):
 
         layout.addWidget(grp_appear)
 
-        # ---------------- 7. Persistence & Actions ---------------- #
+        # ---------------- 7. Jadoo Voice Engine ---------------- #
+        grp_voice = QGroupBox("Jadoo Voice Engine (Offline Dictation && Commands)")
+        form_voice = QFormLayout(grp_voice)
+        form_voice.setSpacing(8)
+
+        self.chk_voice_enabled = QCheckBox("Enable Voice Engine Subsystem")
+        self.chk_voice_enabled.setChecked(getattr(self.settings.voice, "enabled", True))
+        self.chk_voice_enabled.toggled.connect(self._on_voice_enabled_toggled)
+        form_voice.addRow("", self.chk_voice_enabled)
+        form_voice.addRow("", _make_hint("Enables offline speech recognition and voice commands on a dedicated background thread."))
+
+        self.combo_voice_mic = QComboBox()
+        self._populate_audio_devices()
+        self.combo_voice_mic.currentIndexChanged.connect(self._on_voice_mic_selected)
+        form_voice.addRow("Microphone Input:", self.combo_voice_mic)
+        form_voice.addRow("", _make_hint("Select your audio input device for offline dictation and voice commands."))
+
+        self.combo_voice_model = QComboBox()
+        self.combo_voice_model.addItem("ggml-base.bin (141 MB — Standard Quality, Recommended)", "ggml-base.bin")
+        self.combo_voice_model.addItem("ggml-tiny.bin (74 MB — Fast, Low RAM)", "ggml-tiny.bin")
+        self.combo_voice_model.currentIndexChanged.connect(self._on_voice_model_selected)
+        form_voice.addRow("Whisper Model:", self.combo_voice_model)
+        form_voice.addRow("", _make_hint("Both models run 100% offline using optimized whisper.cpp CPU binaries (capped <= 2 threads)."))
+
+        self.combo_voice_lang = QComboBox()
+        self.combo_voice_lang.addItem("English (en — Recommended)", "en")
+        self.combo_voice_lang.addItem("Hindi (hi)", "hi")
+        self.combo_voice_lang.addItem("Hinglish (Hindi + English mixed)", "hinglish")
+        self.combo_voice_lang.addItem("Auto-Detect (Hindi / English / Hinglish)", "auto")
+        self.combo_voice_lang.currentIndexChanged.connect(self._on_voice_lang_selected)
+        form_voice.addRow("Spoken Language:", self.combo_voice_lang)
+        form_voice.addRow("", _make_hint("Whisper automatically transcribes speech into text in the detected or selected language."))
+
+        self.chk_voice_autopaste = QCheckBox("Auto-Insert Dictation into Target Window (Ctrl+V)")
+        self.chk_voice_autopaste.setChecked(getattr(self.settings.voice, "auto_paste", True))
+        self.chk_voice_autopaste.toggled.connect(self._on_voice_autopaste_toggled)
+        form_voice.addRow("", self.chk_voice_autopaste)
+        form_voice.addRow("", _make_hint("When checked, finalized dictation automatically pastes at current active cursor position."))
+
+        # VAD Sensitivity Preset
+        self.combo_vad_preset = QComboBox()
+        self.combo_vad_preset.addItem("Medium (Default — Normal Room / Fan Noise)", "medium")
+        self.combo_vad_preset.addItem("Low Sensitivity (High Suppression — Loud Fan/AC)", "low")
+        self.combo_vad_preset.addItem("High Sensitivity (Quiet Room)", "high")
+        self.combo_vad_preset.currentIndexChanged.connect(self._on_vad_preset_selected)
+        form_voice.addRow("Voice Detection Preset:", self.combo_vad_preset)
+        form_voice.addRow("", _make_hint("Tunes the energy threshold to prevent continuous room, AC, or fan noise triggering."))
+
+        # VAD Threshold Slider (0.010 to 0.100)
+        self.slider_voice_threshold = QSlider(Qt.Orientation.Horizontal)
+        self.slider_voice_threshold.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.slider_voice_threshold.setRange(10, 100)
+        curr_thresh = int(getattr(self.settings.voice, "energy_threshold", 0.035) * 1000)
+        self.slider_voice_threshold.setValue(curr_thresh)
+        self.lbl_voice_threshold_val = QLabel(f"{curr_thresh / 1000:.3f}")
+        self.lbl_voice_threshold_val.setFixedWidth(50)
+        self.lbl_voice_threshold_val.setStyleSheet("font-weight: 600; color: #A7B0BC; font-family: Consolas, monospace;")
+        self.slider_voice_threshold.valueChanged.connect(self._on_voice_threshold_slider_changed)
+        h_vth = QHBoxLayout()
+        h_vth.addWidget(self.slider_voice_threshold)
+        h_vth.addWidget(self.lbl_voice_threshold_val)
+        form_voice.addRow("Custom Energy Gate:", h_vth)
+        form_voice.addRow("", _make_hint("Fine-tune RMS speech threshold (increase if ambient room noise triggers false transcriptions)."))
+
+        layout.addWidget(grp_voice)
+
+        # ---------------- 8. Online Jadoo AI Assistant & Cloud STT ---------------- #
+        grp_jadoo = QGroupBox("Online Jadoo AI Assistant && Cloud STT")
+        form_jadoo = QFormLayout(grp_jadoo)
+        form_jadoo.setSpacing(8)
+
+        # STT Engine Mode
+        self.combo_stt_mode = QComboBox()
+        self.combo_stt_mode.addItem("Cloud First (Default — Groq Whisper with Local Fallback)", "cloud_first")
+        self.combo_stt_mode.addItem("Automatic (Dynamic Auto-Select based on availability)", "auto")
+        self.combo_stt_mode.addItem("Offline Only (100% Local whisper.cpp, Zero Network Requests)", "offline")
+        self.combo_stt_mode.addItem("Cloud Only (Groq Whisper Only, No Offline Fallback)", "cloud")
+        self.combo_stt_mode.currentIndexChanged.connect(self._on_stt_mode_selected)
+        form_jadoo.addRow("STT Engine Mode:", self.combo_stt_mode)
+        form_jadoo.addRow("", _make_hint("Cloud First uses Groq Cloud Whisper (~300ms) with automatic local whisper.cpp fallback if offline or unconfigured."))
+
+        # Groq API Key
+        h_groq = QHBoxLayout()
+        self.inp_groq_key = QLineEdit()
+        self.inp_groq_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.inp_groq_key.setPlaceholderText("gsk_...")
+        self.inp_groq_key.textChanged.connect(self._on_groq_key_changed)
+        h_groq.addWidget(self.inp_groq_key)
+        self.btn_toggle_groq = QPushButton("Show")
+        self.btn_toggle_groq.setFixedWidth(50)
+        self.btn_toggle_groq.clicked.connect(lambda: self._toggle_echo_mode(self.inp_groq_key, self.btn_toggle_groq))
+        h_groq.addWidget(self.btn_toggle_groq)
+        form_jadoo.addRow("Groq API Key (Cloud STT):", h_groq)
+        form_jadoo.addRow("", _make_hint("Optional. Free tier key from console.groq.com. Provides ultra-fast ~300ms voice transcription."))
+
+        # Gemini API Key
+        h_gemini = QHBoxLayout()
+        self.inp_gemini_key = QLineEdit()
+        self.inp_gemini_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.inp_gemini_key.setPlaceholderText("AIza...")
+        self.inp_gemini_key.textChanged.connect(self._on_gemini_key_changed)
+        h_gemini.addWidget(self.inp_gemini_key)
+        self.btn_toggle_gemini = QPushButton("Show")
+        self.btn_toggle_gemini.setFixedWidth(50)
+        self.btn_toggle_gemini.clicked.connect(lambda: self._toggle_echo_mode(self.inp_gemini_key, self.btn_toggle_gemini))
+        h_gemini.addWidget(self.btn_toggle_gemini)
+        form_jadoo.addRow("Gemini API Key (AI Assistant):", h_gemini)
+        form_jadoo.addRow("", _make_hint("Key from aistudio.google.com for Jadoo conversational answers, Hinglish rewrite, and screen guidance."))
+
+        # SAPI TTS Checkbox
+        self.chk_tts_enabled = QCheckBox("Enable Windows SAPI Voice Responses (Spoken Answers)")
+        self.chk_tts_enabled.setChecked(getattr(self.settings.jadoo, "tts_enabled", False) if hasattr(self.settings, "jadoo") else False)
+        self.chk_tts_enabled.toggled.connect(self._on_tts_toggled)
+        form_jadoo.addRow("", self.chk_tts_enabled)
+        form_jadoo.addRow("", _make_hint("Uses native Windows Speech Synthesis to speak responses aloud. Automatically pauses microphone during speech."))
+
+        layout.addWidget(grp_jadoo)
+
+        # ---------------- 8b. Hands-Free Accessibility & Floating Panel ---------------- #
+        grp_access = QGroupBox("Jadoo Hands-Free Accessibility && Floating Panel")
+        form_access = QFormLayout(grp_access)
+        form_access.setSpacing(8)
+
+        self.chk_auto_show_panel = QCheckBox("Show Always-On-Top Floating Control Panel")
+        self.chk_auto_show_panel.setChecked(getattr(self.settings.accessibility, "auto_show_panel", True))
+        self.chk_auto_show_panel.toggled.connect(self._on_auto_show_panel_toggled)
+        form_access.addRow("", self.chk_auto_show_panel)
+
+        self.btn_toggle_panel_now = QPushButton("Toggle Floating Panel Visibility")
+        self.btn_toggle_panel_now.setFixedHeight(32)
+        self.btn_toggle_panel_now.clicked.connect(self.sig_show_floating_panel.emit)
+        form_access.addRow("Quick Action:", self.btn_toggle_panel_now)
+
+        self.chk_windows_startup = QCheckBox("Launch Jadoo Automatically on Windows Login")
+        from utils.windows_startup import is_windows_startup_enabled
+        self.chk_windows_startup.setChecked(is_windows_startup_enabled())
+        self.chk_windows_startup.toggled.connect(self._on_windows_startup_toggled)
+        form_access.addRow("", self.chk_windows_startup)
+        form_access.addRow("", _make_hint("Registers HeadMouseAI in Windows Run registry key. Never installed without explicit user toggle."))
+
+        self.chk_tts_feedback = QCheckBox("Spoken Voice Feedback for Voice && Panel Actions")
+        self.chk_tts_feedback.setChecked(getattr(self.settings.accessibility, "tts_feedback", True))
+        self.chk_tts_feedback.toggled.connect(self._on_tts_feedback_toggled)
+        form_access.addRow("", self.chk_tts_feedback)
+
+        self.combo_panel_btn_size = QComboBox()
+        self.combo_panel_btn_size.addItem("Large (Recommended for Head Mouse)", "large")
+        self.combo_panel_btn_size.addItem("Medium (Compact)", "medium")
+        cur_btn_size = getattr(self.settings.accessibility, "button_size", "large")
+        idx_size = 0 if cur_btn_size == "large" else 1
+        self.combo_panel_btn_size.setCurrentIndex(idx_size)
+        self.combo_panel_btn_size.currentIndexChanged.connect(self._on_btn_size_selected)
+        form_access.addRow("Panel Button Size:", self.combo_panel_btn_size)
+
+        layout.addWidget(grp_access)
+
+        # ---------------- 9. Persistence & Actions ---------------- #
         grp_actions = QGroupBox("User Profiles && Calibration")
         v_actions = QVBoxLayout(grp_actions)
         v_actions.setSpacing(10)
@@ -360,6 +530,19 @@ class SettingsTabWidget(QWidget):
             self.combo_camera.addItem("Camera 0 (Default)", 0)
             self.combo_camera.addItem("Camera 1", 1)
 
+    def _populate_audio_devices(self) -> None:
+        """Enumerate audio input devices using AudioDeviceManager with hardware prioritization."""
+        self.combo_voice_mic.clear()
+        self.combo_voice_mic.addItem("Auto-Select (Best Hardware Microphone)", -1)
+        try:
+            devices = AudioDeviceManager.get_input_devices()
+            if devices:
+                for dev in devices:
+                    prefix = "🎤 " if dev.get("is_hardware", False) else ("⚠️ [Virtual] " if dev.get("is_virtual", False) else "")
+                    self.combo_voice_mic.addItem(f"{prefix}{dev['name']}", dev["index"])
+        except Exception as e:
+            logger.error(f"Error populating audio devices: {e}")
+
     def populate_from_settings(self, settings: AppSettings) -> None:
         """Sync UI controls with settings model."""
         self.settings = settings
@@ -400,6 +583,72 @@ class SettingsTabWidget(QWidget):
             if self.combo_refresh_rate.itemData(i) == rf_hz:
                 self.combo_refresh_rate.setCurrentIndex(i)
                 break
+
+        # Voice Settings
+        v_cfg = self.settings.voice
+        self.chk_voice_enabled.setChecked(v_cfg.enabled)
+        self.chk_voice_autopaste.setChecked(v_cfg.auto_paste)
+
+        # Voice Mic
+        target_dev = v_cfg.device_index
+        if target_dev is None or target_dev == -1:
+            self.combo_voice_mic.setCurrentIndex(0)
+        else:
+            for i in range(self.combo_voice_mic.count()):
+                if self.combo_voice_mic.itemData(i) == target_dev:
+                    self.combo_voice_mic.setCurrentIndex(i)
+                    break
+
+        # Voice Model
+        for i in range(self.combo_voice_model.count()):
+            if self.combo_voice_model.itemData(i) == v_cfg.model_name:
+                self.combo_voice_model.setCurrentIndex(i)
+                break
+
+        # Voice Language
+        for i in range(self.combo_voice_lang.count()):
+            if self.combo_voice_lang.itemData(i) == v_cfg.language:
+                self.combo_voice_lang.setCurrentIndex(i)
+                break
+
+        # VAD Preset & Threshold
+        preset = getattr(v_cfg, "vad_sensitivity", "medium").lower()
+        for i in range(self.combo_vad_preset.count()):
+            if self.combo_vad_preset.itemData(i) == preset:
+                self.combo_vad_preset.setCurrentIndex(i)
+                break
+        thresh_int = int(getattr(v_cfg, "energy_threshold", 0.028) * 1000)
+        self.slider_voice_threshold.setValue(thresh_int)
+        self.lbl_voice_threshold_val.setText(f"{thresh_int / 1000:.3f}")
+
+        # Jadoo Assistant & STT Settings
+        j_cfg = getattr(settings, "jadoo", None)
+        if j_cfg is not None:
+            self.inp_groq_key.setText(j_cfg.groq_api_key or "")
+            from ai_provider.groq_stt import resolve_groq_api_key
+            if not j_cfg.groq_api_key and resolve_groq_api_key():
+                self.inp_groq_key.setPlaceholderText("(Active via Windows Environment Variable)")
+            else:
+                self.inp_groq_key.setPlaceholderText("gsk_...")
+            self.inp_gemini_key.setText(j_cfg.gemini_api_key or "")
+            for i in range(self.combo_stt_mode.count()):
+                if self.combo_stt_mode.itemData(i) == j_cfg.stt_mode:
+                    self.combo_stt_mode.setCurrentIndex(i)
+                    break
+            self.chk_tts_enabled.setChecked(j_cfg.tts_enabled)
+
+        # Accessibility Settings
+        acc_cfg = getattr(settings, "accessibility", None)
+        if acc_cfg is not None:
+            self.chk_auto_show_panel.setChecked(acc_cfg.auto_show_panel)
+            self.chk_tts_feedback.setChecked(acc_cfg.tts_feedback)
+            idx_s = 0 if acc_cfg.button_size == "large" else 1
+            self.combo_panel_btn_size.setCurrentIndex(idx_s)
+        try:
+            from utils.windows_startup import is_windows_startup_enabled
+            self.chk_windows_startup.setChecked(is_windows_startup_enabled())
+        except Exception:
+            pass
 
     def _on_camera_selected(self, index: int) -> None:
         cam_id = self.combo_camera.itemData(index)
@@ -484,9 +733,162 @@ class SettingsTabWidget(QWidget):
             self.settings.gui.ui_refresh_hz = int(hz)
             self.sig_settings_changed.emit({"ui_refresh_hz": int(hz)})
 
+    def _on_voice_enabled_toggled(self, checked: bool) -> None:
+        self.settings.voice.enabled = checked
+        self.sig_voice_enabled_changed.emit(checked)
+        self.sig_settings_changed.emit({"voice_enabled": checked})
+
+    def _on_voice_mic_selected(self, index: int) -> None:
+        dev_idx = self.combo_voice_mic.itemData(index)
+        if dev_idx is not None and dev_idx >= 0:
+            self.settings.voice.device_index = int(dev_idx)
+            self.sig_voice_mic_changed.emit(int(dev_idx))
+            self.sig_settings_changed.emit({"voice_device_index": int(dev_idx)})
+        elif dev_idx == -1:
+            self.settings.voice.device_index = None
+
+    def _on_voice_model_selected(self, index: int) -> None:
+        model = self.combo_voice_model.itemData(index)
+        if model:
+            self.settings.voice.model_name = str(model)
+            self.sig_voice_model_changed.emit(str(model))
+            self.sig_settings_changed.emit({"voice_model_name": str(model)})
+
+    def _on_voice_lang_selected(self, index: int) -> None:
+        lang = self.combo_voice_lang.itemData(index)
+        if lang:
+            self.settings.voice.language = str(lang)
+            self.sig_voice_lang_changed.emit(str(lang))
+            self.sig_settings_changed.emit({"voice_language": str(lang)})
+
+    def set_voice_language(self, lang: str) -> None:
+        """Programmatically update combo_voice_lang without triggering cyclic signals."""
+        for i in range(self.combo_voice_lang.count()):
+            if self.combo_voice_lang.itemData(i) == lang:
+                if self.combo_voice_lang.currentIndex() != i:
+                    self.combo_voice_lang.blockSignals(True)
+                    self.combo_voice_lang.setCurrentIndex(i)
+                    self.combo_voice_lang.blockSignals(False)
+                break
+
+    def _on_voice_autopaste_toggled(self, checked: bool) -> None:
+        self.settings.voice.auto_paste = checked
+        self.sig_voice_autopaste_changed.emit(checked)
+        self.sig_settings_changed.emit({"voice_auto_paste": checked})
+
+    def _on_vad_preset_selected(self, index: int) -> None:
+        preset = self.combo_vad_preset.itemData(index)
+        if not preset:
+            return
+        preset_str = str(preset)
+        self.settings.voice.vad_sensitivity = preset_str
+        if preset_str == "high":
+            thresh = 0.022
+        elif preset_str == "low":
+            thresh = 0.055
+        else:  # medium
+            thresh = 0.035
+
+        self.slider_voice_threshold.setValue(int(thresh * 1000))
+        self.lbl_voice_threshold_val.setText(f"{thresh:.3f}")
+        self.settings.voice.energy_threshold = thresh
+        self.sig_voice_threshold_changed.emit(thresh)
+        self.sig_settings_changed.emit({"voice_energy_threshold": thresh, "voice_vad_sensitivity": preset_str})
+
+    def _on_voice_threshold_slider_changed(self, val: int) -> None:
+        thresh = val / 1000.0
+        self.lbl_voice_threshold_val.setText(f"{thresh:.3f}")
+        self.settings.voice.energy_threshold = thresh
+        self.sig_voice_threshold_changed.emit(thresh)
+        self.sig_settings_changed.emit({"voice_energy_threshold": thresh})
+
+    def _toggle_echo_mode(self, line_edit: QLineEdit, btn: QPushButton) -> None:
+        """Toggle echo mode between Password and Normal for API key inputs."""
+        if line_edit.echoMode() == QLineEdit.EchoMode.Password:
+            line_edit.setEchoMode(QLineEdit.EchoMode.Normal)
+            btn.setText("Hide")
+        else:
+            line_edit.setEchoMode(QLineEdit.EchoMode.Password)
+            btn.setText("Show")
+
+    def _on_stt_mode_selected(self, index: int) -> None:
+        mode = self.combo_stt_mode.itemData(index) or "cloud_first"
+        if hasattr(self.settings, "jadoo"):
+            self.settings.jadoo.stt_mode = mode
+        self.sig_stt_mode_changed.emit(mode)
+        self.sig_settings_changed.emit({"jadoo_stt_mode": mode})
+
+    def _on_groq_key_changed(self, text: str) -> None:
+        clean_key = text.strip()
+        if hasattr(self.settings, "jadoo"):
+            self.settings.jadoo.groq_api_key = clean_key
+        self.sig_groq_key_changed.emit(clean_key)
+
+    def _on_gemini_key_changed(self, text: str) -> None:
+        clean_key = text.strip()
+        if hasattr(self.settings, "jadoo"):
+            self.settings.jadoo.gemini_api_key = clean_key
+        self.sig_gemini_key_changed.emit(clean_key)
+
+    def _on_tts_toggled(self, checked: bool) -> None:
+        if hasattr(self.settings, "jadoo"):
+            self.settings.jadoo.tts_enabled = checked
+        self.sig_tts_toggled.emit(checked)
+        self.sig_settings_changed.emit({"jadoo_tts_enabled": checked})
+
+    def _on_auto_show_panel_toggled(self, checked: bool) -> None:
+        if hasattr(self.settings, "accessibility"):
+            self.settings.accessibility.auto_show_panel = checked
+        self.sig_floating_panel_toggled.emit(checked)
+        self.sig_settings_changed.emit({"auto_show_panel": checked})
+
+    def _on_windows_startup_toggled(self, checked: bool) -> None:
+        try:
+            from utils.windows_startup import set_windows_startup_enabled
+            if checked:
+                reply = QMessageBox.question(
+                    self,
+                    "Windows Startup Configuration",
+                    "Do you want HeadMouseAI + Jadoo to automatically launch when you sign in to Windows?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    self.chk_windows_startup.setChecked(False)
+                    return
+            set_windows_startup_enabled(checked)
+            if hasattr(self.settings, "accessibility"):
+                self.settings.accessibility.windows_startup = checked
+            self.sig_settings_changed.emit({"windows_startup": checked})
+        except Exception as e:
+            logger.warning(f"Error configuring Windows startup: {e}")
+
+    def _on_tts_feedback_toggled(self, checked: bool) -> None:
+        if hasattr(self.settings, "accessibility"):
+            self.settings.accessibility.tts_feedback = checked
+        self.sig_settings_changed.emit({"tts_feedback": checked})
+
+    def _on_btn_size_selected(self, index: int) -> None:
+        size = self.combo_panel_btn_size.itemData(index) or "large"
+        if hasattr(self.settings, "accessibility"):
+            self.settings.accessibility.button_size = str(size)
+        self.sig_settings_changed.emit({"panel_button_size": str(size)})
+
     def _save_to_config(self) -> None:
         """Validate and persist current settings to config.toml."""
         try:
+            if hasattr(self.settings, "jadoo"):
+                self.settings.jadoo.groq_api_key = self.inp_groq_key.text().strip()
+                self.settings.jadoo.gemini_api_key = self.inp_gemini_key.text().strip()
+                self.settings.jadoo.stt_mode = self.combo_stt_mode.currentData() or "auto"
+                self.settings.jadoo.tts_enabled = self.chk_tts_enabled.isChecked()
+
+            if hasattr(self.settings, "accessibility"):
+                self.settings.accessibility.auto_show_panel = self.chk_auto_show_panel.isChecked()
+                self.settings.accessibility.tts_feedback = self.chk_tts_feedback.isChecked()
+                self.settings.accessibility.button_size = self.combo_panel_btn_size.currentData() or "large"
+                self.settings.accessibility.windows_startup = self.chk_windows_startup.isChecked()
+
             val_errors = self.settings.validate()
             if val_errors:
                 self.lbl_save_status.setText(f"Validation error: {val_errors[0]}")

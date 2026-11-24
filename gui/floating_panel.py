@@ -94,8 +94,8 @@ class AccessibleButton(QPushButton):
                 color: {text_color};
                 border: 2px solid {border};
                 border-radius: 8px;
-                padding: 8px 12px;
-                font-size: 13px;
+                padding: 6px 6px;
+                font-size: 12px;
                 font-weight: 700;
                 text-align: center;
             }}
@@ -198,7 +198,7 @@ class FloatingControlPanel(QWidget):
         h_layout.setSpacing(6)
 
         # Drag handle icon / Title
-        self.lbl_title = QLabel("✦ JADOO CONTROL")
+        self.lbl_title = QLabel("✦ HEADMOUSE AI")
         self.lbl_title.setStyleSheet(f"color: {INK_SOFT_IVORY}; font-size: 11px; font-weight: 800; letter-spacing: 0.5px;")
         h_layout.addWidget(self.lbl_title)
 
@@ -218,7 +218,7 @@ class FloatingControlPanel(QWidget):
         h_layout.addStretch(1)
 
         # Compact / Expand button
-        self.btn_toggle_compact = QPushButton("—" if not self._is_compact else "▢")
+        self.btn_toggle_compact = QPushButton("▲" if not self._is_compact else "▼")
         self.btn_toggle_compact.setToolTip("Toggle Compact Mode")
         self.btn_toggle_compact.setFixedSize(24, 24)
         self.btn_toggle_compact.setStyleSheet("""
@@ -228,6 +228,7 @@ class FloatingControlPanel(QWidget):
                 border: 1px solid #333A4A;
                 border-radius: 4px;
                 font-weight: 900;
+                font-size: 11px;
             }
             QPushButton:hover { background-color: #3B4252; }
         """)
@@ -424,7 +425,32 @@ class FloatingControlPanel(QWidget):
         self.scroll_area.setWidget(self.expanded_container)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll_area.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        self.scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                background: transparent;
+                border: none;
+            }}
+            QScrollBar:vertical {{
+                border: none;
+                background: transparent;
+                width: 6px;
+                margin: 0;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {INK_COOL_GRAY};
+                min-height: 20px;
+                border-radius: 3px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {INK_SILVER_GRAY};
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+        """)
 
         main_layout.addWidget(self.scroll_area)
 
@@ -434,8 +460,8 @@ class FloatingControlPanel(QWidget):
     def _restore_geometry(self) -> None:
         """Restore position and size from saved configuration."""
         acc = self.settings.accessibility
-        width = max(260, acc.panel_width)
-        height = 110 if self._is_compact else max(400, acc.panel_height)
+        width = max(360, acc.panel_width)
+        height = 110 if self._is_compact else max(460, acc.panel_height)
         self.resize(width, height)
 
         if acc.panel_x >= 0 and acc.panel_y >= 0:
@@ -470,13 +496,13 @@ class FloatingControlPanel(QWidget):
         if self._is_compact:
             self.scroll_area.setVisible(False)
             self.compact_row.setVisible(True)
-            self.btn_toggle_compact.setText("▢")
+            self.btn_toggle_compact.setText("▼")
             self.resize(self.width(), 105)
         else:
             self.compact_row.setVisible(False)
             self.scroll_area.setVisible(True)
-            self.btn_toggle_compact.setText("—")
-            saved_h = max(420, self.settings.accessibility.panel_height)
+            self.btn_toggle_compact.setText("▲")
+            saved_h = max(460, self.settings.accessibility.panel_height)
             self.resize(self.width(), saved_h)
 
     # ---------------- Dragging Implementation ---------------- #
@@ -528,23 +554,28 @@ class FloatingControlPanel(QWidget):
     @Slot(str)
     def update_mode_badge(self, mode_str: str) -> None:
         """Update mode badge text and styling."""
-        mode_u = mode_str.upper()
-        self.lbl_mode_badge.setText(mode_u)
+        mode_u = mode_str.upper().replace("_MODE", "")
+        self.lbl_mode_badge.setText(mode_u[:11])
 
-        if "DICTAT" in mode_u:
+        if "HEAD" in mode_u or "NOSE" in mode_u:
+            self.lbl_mode_badge.setStyleSheet(f"""
+                background-color: #1A2520; color: {INK_SAGE_GRAY};
+                border: 1px solid {INK_SAGE_GRAY}; border-radius: 4px; padding: 2px 6px; font-weight: 800; font-size: 10px;
+            """)
+        elif "AGENT" in mode_u or "AUTO" in mode_u:
+            self.lbl_mode_badge.setStyleSheet("""
+                background-color: #1F1F2B; color: #C4B5FD;
+                border: 1px solid #7C3AED; border-radius: 4px; padding: 2px 6px; font-weight: 800; font-size: 10px;
+            """)
+        elif "PAUSE" in mode_u or "STOP" in mode_u:
+            self.lbl_mode_badge.setStyleSheet(f"""
+                background-color: #291516; color: {INK_MUTED_CRIMSON};
+                border: 1px solid {INK_MUTED_CRIMSON}; border-radius: 4px; padding: 2px 6px; font-weight: 800; font-size: 10px;
+            """)
+        elif "DICTAT" in mode_u:
             self.lbl_mode_badge.setStyleSheet(f"""
                 background-color: #24201A; color: {INK_MUTED_AMBER};
                 border: 1px solid {INK_MUTED_AMBER}; border-radius: 4px; padding: 2px 6px; font-weight: 800; font-size: 10px;
-            """)
-        elif "COMMAND" in mode_u:
-            self.lbl_mode_badge.setStyleSheet(f"""
-                background-color: #1A211D; color: {INK_SAGE_GRAY};
-                border: 1px solid {INK_SAGE_GRAY}; border-radius: 4px; padding: 2px 6px; font-weight: 800; font-size: 10px;
-            """)
-        elif "STOP" in mode_u:
-            self.lbl_mode_badge.setStyleSheet(f"""
-                background-color: #281718; color: {INK_MUTED_CRIMSON};
-                border: 1px solid {INK_MUTED_CRIMSON}; border-radius: 4px; padding: 2px 6px; font-weight: 800; font-size: 10px;
             """)
         else:
             self.lbl_mode_badge.setStyleSheet(f"""

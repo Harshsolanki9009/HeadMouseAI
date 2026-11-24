@@ -90,6 +90,7 @@ class TelemetryCardsWidget(QWidget):
 
         # ---------------- Section 1: System & Tracking ---------------- #
         grp_sys = QGroupBox("System && Tracking")
+        grp_sys.setMinimumHeight(120)
         layout_sys = QGridLayout(grp_sys)
         layout_sys.setContentsMargins(10, 12, 10, 8)
         layout_sys.setHorizontalSpacing(10)
@@ -133,6 +134,7 @@ class TelemetryCardsWidget(QWidget):
 
         # ---------------- Section 2: Eyes & Clicks ---------------- #
         grp_eyes = QGroupBox("Eyes && Click Gestures")
+        grp_eyes.setMinimumHeight(135)
         layout_eyes = QGridLayout(grp_eyes)
         layout_eyes.setContentsMargins(10, 12, 10, 8)
         layout_eyes.setHorizontalSpacing(10)
@@ -164,10 +166,14 @@ class TelemetryCardsWidget(QWidget):
 
         # ---------------- Section 3: Hands-Free Gestures ---------------- #
         grp_gesture = QGroupBox("Hands-Free Scroll && Zoom")
+        grp_gesture.setMinimumHeight(165)
         layout_gest = QGridLayout(grp_gesture)
-        layout_gest.setContentsMargins(10, 12, 10, 8)
+        layout_gest.setContentsMargins(10, 14, 10, 10)
         layout_gest.setHorizontalSpacing(10)
-        layout_gest.setVerticalSpacing(6)
+        layout_gest.setVerticalSpacing(8)
+
+        for r in range(5):
+            layout_gest.setRowMinimumHeight(r, 24)
 
         layout_gest.addWidget(self._make_label("Active Mode:"), 0, 0)
         self.badge_mode = StatusBadge("NORMAL")
@@ -204,6 +210,7 @@ class TelemetryCardsWidget(QWidget):
 
         # ---------------- Section 4: Performance & Resources ---------------- #
         grp_perf = QGroupBox("Performance && Resources")
+        grp_perf.setMinimumHeight(135)
         layout_perf = QGridLayout(grp_perf)
         layout_perf.setContentsMargins(10, 12, 10, 8)
         layout_perf.setHorizontalSpacing(10)

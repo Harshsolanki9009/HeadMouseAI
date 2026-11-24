@@ -211,6 +211,23 @@ class AgentDesktopAdapter:
             args.append("--force")
         return self.execute(args)
 
+    def screenshot(
+        self,
+        output_path: Optional[str] = None,
+        screen_index: int = 0,
+        app_name: Optional[str] = None,
+        window_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Take a PNG screenshot of a screen or application window."""
+        args = ["screenshot", "--screen", str(screen_index)]
+        if app_name:
+            args.extend(["--app", app_name])
+        if window_id:
+            args.extend(["--window-id", window_id])
+        if output_path:
+            args.append(output_path)
+        return self.execute(args)
+
     def list_windows(self, app_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """List all visible windows, optionally filtered by application name."""
         args = ["list-windows"]

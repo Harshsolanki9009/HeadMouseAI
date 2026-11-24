@@ -1,6 +1,6 @@
 ; Inno Setup 6 Script for Jadoo Desktop Assistant
 #define MyAppName "Jadoo"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.1.0"
 #define MyAppPublisher "ACROPOLIANS"
 #define MyAppURL "https://github.com/Harshsolanki9009/HeadMouseAI"
 #define MyAppExeName "Jadoo.exe"
@@ -26,11 +26,11 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\assets\icons\app_icon.ico
-VersionInfoVersion=2.0.0.0
+VersionInfoVersion=2.1.0.0
 VersionInfoCompany={#MyAppPublisher}
-VersionInfoDescription=Jadoo - AI Hands-Free Accessibility Desktop Assistant
+VersionInfoDescription=Jadoo - Dual Mouse Control (Autonomous AI Agent + HeadMouseAI)
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=2.0.0.0
+VersionInfoProductVersion=2.1.0.0
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

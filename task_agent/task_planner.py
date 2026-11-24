@@ -69,7 +69,93 @@ class TaskPlanner:
 
     def _try_deterministic_template(self, text: str) -> Optional[TaskPlan]:
         """Match common user patterns (e.g. open notepad, search in browser)."""
-        lower = text.lower()
+        clean = re.sub(r"^(?:hey\s+)?jadoo[,\s]+", "", text, flags=re.IGNORECASE).strip()
+        lower = clean.lower()
+
+        # Pattern: Open Chrome / Launch Chrome
+        if re.search(r"^\s*(?:open|launch)\s+(?:google\s+)?chrome\s*$", lower):
+            plan = TaskPlan(instruction=text, summary="Launch Google Chrome browser")
+            plan.steps = [
+                TaskStep(0, ActionType.LAUNCH_APP, "Launch Chrome Browser", target="chrome"),
+                TaskStep(1, ActionType.WAIT, "Wait for Chrome window", value=1.5),
+            ]
+            self._apply_safety_annotations(plan)
+            return plan
+
+        # Pattern: Open YouTube and search for <query>
+        if "youtube" in lower:
+            m_yt = re.search(
+                r"(?:open\s+youtube\s+(?:and\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?)(.+?)(?:\s+on\s+youtube|$)",
+                clean,
+                re.IGNORECASE,
+            )
+            yt_query = m_yt.group(1).strip() if (m_yt and m_yt.group(1).strip()) else "tutorial"
+            encoded = yt_query.replace(" ", "+")
+            plan = TaskPlan(instruction=text, summary=f"Search YouTube for '{yt_query}'")
+            plan.steps = [
+                TaskStep(
+                    0,
+                    ActionType.LAUNCH_APP,
+                    "Open YouTube Search in Browser",
+                    target=f"https://www.youtube.com/results?search_query={encoded}",
+                ),
+                TaskStep(1, ActionType.WAIT, "Wait for browser window to load", value=2.0),
+                TaskStep(2, ActionType.CAPTURE_SCREEN, "Observe search results"),
+            ]
+            self._apply_safety_annotations(plan)
+            return plan
+
+        # Pattern: Open Notepad and write a leave application
+        if re.search(r"open\s+notepad\s+(?:and\s+)?write\s+(?:a\s+)?leave\s+application", lower):
+            leave_text = (
+                "Subject: Leave Application\n\n"
+                "Dear Sir/Madam,\n\n"
+                "I am writing to formally request leave for two days due to urgent personal work. "
+                "I will ensure all pending tasks are updated and resume work promptly.\n\n"
+                "Thank you for your understanding.\n\n"
+                "Sincerely,\n"
+                "Your Name"
+            )
+            plan = TaskPlan(instruction=text, summary="Open Notepad and write professional leave application")
+            plan.steps = [
+                TaskStep(0, ActionType.LAUNCH_APP, "Launch Notepad", target="notepad"),
+                TaskStep(1, ActionType.WAIT, "Wait for Notepad window", value=1.0),
+                TaskStep(2, ActionType.TYPE_TEXT, "Type leave application into Notepad", target="notepad", value=leave_text),
+                TaskStep(3, ActionType.WAIT, "Wait for typing completion", value=0.5),
+            ]
+            self._apply_safety_annotations(plan)
+            return plan
+
+        # Pattern: Create a folder named <name>
+        m_folder = re.search(r"create\s+(?:a\s+)?folder\s+(?:named|called)?\s*([a-zA-Z0-9_\-\s]+)", clean, re.IGNORECASE)
+        if m_folder:
+            folder_name = m_folder.group(1).strip()
+            import os
+            from task_agent.agent_desktop_adapter import AgentDesktopAdapter
+            desktop_dir = AgentDesktopAdapter.get_desktop_directory()
+            target_folder = os.path.join(desktop_dir, folder_name)
+            os.makedirs(target_folder, exist_ok=True)
+            plan = TaskPlan(instruction=text, summary=f"Create folder '{folder_name}' on Desktop")
+            plan.steps = [
+                TaskStep(0, ActionType.LAUNCH_APP, f"Open folder '{folder_name}' in Explorer", target=target_folder),
+                TaskStep(1, ActionType.WAIT, "Wait for Explorer window", value=1.0),
+                TaskStep(2, ActionType.CAPTURE_SCREEN, "Verify created folder in Explorer"),
+            ]
+            self._apply_safety_annotations(plan)
+            return plan
+
+        # Pattern: Open my project folder and find Python file
+        if re.search(r"open\s+(?:my\s+)?project\s+folder(?:\s+and\s+find\s+(?:the\s+)?python\s+file)?", lower):
+            import os
+            project_dir = os.path.abspath(".")
+            plan = TaskPlan(instruction=text, summary=f"Open project folder in Explorer")
+            plan.steps = [
+                TaskStep(0, ActionType.LAUNCH_APP, "Open Project Directory in Explorer", target=project_dir),
+                TaskStep(1, ActionType.WAIT, "Wait for Explorer window", value=1.5),
+                TaskStep(2, ActionType.CAPTURE_SCREEN, "Observe project directory contents"),
+            ]
+            self._apply_safety_annotations(plan)
+            return plan
 
         # Pattern: Open Notepad, type <text> and save (it) on/to desktop as <filename>
         m_notepad_save = re.search(
@@ -164,7 +250,7 @@ class TaskPlanner:
         # Pattern: Open Chrome / Edge and search for <query>
         m_search = re.search(r"(?:open\s+(?:chrome|browser|google)\s+(?:and\s+)?search\s+(?:for\s+)?|search\s+(?:for\s+)?)(.+?)(?:\s+on\s+google|\s+in\s+chrome|$)", text, re.IGNORECASE)
         if m_search:
-            query = m_search.group(1).strip()
+            query = m_search.group(1).strip().rstrip(".")
             plan = TaskPlan(instruction=text, summary=f"Search Google for '{query}'")
             plan.steps = [
                 TaskStep(0, ActionType.LAUNCH_APP, "Launch Chrome Browser", target="chrome"),

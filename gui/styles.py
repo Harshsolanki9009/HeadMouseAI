@@ -38,8 +38,8 @@ INK_MUTED_CRIMSON = "#B66F70"
 INK_PURE_WHITE = "#FFFFFF"
 INK_PURE_BLACK = "#0D0E10"
 
-FONT_PRIMARY = '"Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, "Inter", sans-serif'
-FONT_MONO = '"Cascadia Code", "Consolas", monospace'
+FONT_PRIMARY = '"Segoe UI"'
+FONT_MONO = '"Consolas"'
 
 INK_WASH_THEME_QSS = f"""
 /* Global Window & Base Styles */
@@ -444,23 +444,54 @@ QScrollArea {{
 
 QScrollBar:vertical {{
     border: none;
-    background: {INK_CANVAS};
-    width: 8px;
+    background: transparent;
+    width: 6px;
     margin: 0;
 }}
 
 QScrollBar::handle:vertical {{
-    background: {INK_COOL_GRAY};
+    background: #34383D;
     min-height: 24px;
-    border-radius: 4px;
+    border-radius: 3px;
 }}
 
 QScrollBar::handle:vertical:hover {{
-    background: {INK_MUTED_SLATE};
+    background: #777F87;
 }}
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0px;
+    background: none;
+}}
+
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: none;
+}}
+
+QScrollBar:horizontal {{
+    border: none;
+    background: transparent;
+    height: 6px;
+    margin: 0;
+}}
+
+QScrollBar::handle:horizontal {{
+    background: #34383D;
+    min-width: 24px;
+    border-radius: 3px;
+}}
+
+QScrollBar::handle:horizontal:hover {{
+    background: #777F87;
+}}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    width: 0px;
+    background: none;
+}}
+
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+    background: none;
 }}
 
 /* Status Bar */

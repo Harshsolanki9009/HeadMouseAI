@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -270,6 +271,45 @@ class TaskAgentWidget(QFrame):
         right_box.addWidget(self.txt_log)
         mid_row.addLayout(right_box, 1)
 
+        # Rightmost: Desktop Screen Preview & Live Verification
+        preview_box = QVBoxLayout()
+        preview_box.setSpacing(4)
+        lbl_preview_hdr = QLabel("Desktop Preview:")
+        lbl_preview_hdr.setStyleSheet("font-size: 11px; font-weight: 700; color: #94A3B8;")
+        preview_box.addWidget(lbl_preview_hdr)
+
+        self.lbl_screenshot_preview = QLabel("No desktop\ncapture yet")
+        self.lbl_screenshot_preview.setFixedSize(140, 90)
+        self.lbl_screenshot_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_screenshot_preview.setStyleSheet(f"""
+            QLabel {{
+                background-color: {INK_CANVAS};
+                color: {INK_MUTED_SLATE};
+                border: 1px solid {INK_COOL_GRAY};
+                border-radius: 6px;
+                font-size: 10px;
+                font-weight: 500;
+            }}
+        """)
+        preview_box.addWidget(self.lbl_screenshot_preview)
+
+        self.lbl_verification_status = QLabel("VERIFIED: IDLE")
+        self.lbl_verification_status.setStyleSheet(f"""
+            background-color: {INK_CANVAS};
+            color: {INK_SILVER_GRAY};
+            border: 1px solid {INK_COOL_GRAY};
+            border-radius: 4px;
+            padding: 2px 4px;
+            font-size: 9px;
+            font-weight: 700;
+        """)
+        self.lbl_verification_status.setFixedWidth(140)
+        self.lbl_verification_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        preview_box.addWidget(self.lbl_verification_status)
+        preview_box.addStretch(1)
+
+        mid_row.addLayout(preview_box)
+
         layout.addLayout(mid_row)
 
     def _connect_manager(self) -> None:
@@ -290,6 +330,8 @@ class TaskAgentWidget(QFrame):
         self.task_manager.sig_confirmation_required.connect(self._on_confirmation_required)
         self.task_manager.sig_task_completed.connect(self._on_task_completed)
         self.task_manager.sig_log_message.connect(self.append_log)
+        self.task_manager.sig_screenshot_captured.connect(self.on_screenshot_captured)
+        self.task_manager.sig_verification_status.connect(self.on_verification_status)
 
     @Slot()
     def _on_plan_clicked(self) -> None:
@@ -413,3 +455,45 @@ class TaskAgentWidget(QFrame):
         sb = self.txt_log.verticalScrollBar()
         if sb:
             sb.setValue(sb.maximum())
+
+    @Slot(bytes)
+    def on_screenshot_captured(self, jpeg_bytes: bytes) -> None:
+        """Render raw JPEG desktop screenshot thumbnail into preview card."""
+        try:
+            pix = QPixmap()
+            if pix.loadFromData(jpeg_bytes):
+                scaled = pix.scaled(
+                    140, 90,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self.lbl_screenshot_preview.setPixmap(scaled)
+        except Exception as e:
+            logger.debug(f"Error displaying desktop preview: {e}")
+
+    @Slot(str, str)
+    def on_verification_status(self, msg: str, state: str) -> None:
+        """Update live verification badge."""
+        state_u = state.upper()
+        self.lbl_verification_status.setText(msg[:24])
+        self.lbl_verification_status.setToolTip(msg)
+        if state_u in ("OK", "PASS", "SUCCESS"):
+            self.lbl_verification_status.setStyleSheet(f"""
+                background-color: #064E3B; color: #6EE7B7; border: 1px solid #059669;
+                border-radius: 4px; padding: 2px 4px; font-size: 9px; font-weight: 700;
+            """)
+        elif state_u in ("OBSERVING", "CHECKING"):
+            self.lbl_verification_status.setStyleSheet(f"""
+                background-color: #1E2B4C; color: #93C5FD; border: 1px solid #3B82F6;
+                border-radius: 4px; padding: 2px 4px; font-size: 9px; font-weight: 700;
+            """)
+        elif state_u in ("FAIL", "ERROR"):
+            self.lbl_verification_status.setStyleSheet(f"""
+                background-color: #7F1D1D; color: #FCA5A5; border: 1px solid #DC2626;
+                border-radius: 4px; padding: 2px 4px; font-size: 9px; font-weight: 700;
+            """)
+        else:
+            self.lbl_verification_status.setStyleSheet(f"""
+                background-color: {INK_CANVAS}; color: {INK_SILVER_GRAY}; border: 1px solid {INK_COOL_GRAY};
+                border-radius: 4px; padding: 2px 4px; font-size: 9px; font-weight: 700;
+            """)

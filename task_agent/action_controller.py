@@ -53,16 +53,48 @@ class ActionController:
         self.default_move_duration = max(0.1, float(default_move_duration))
         self.agent_desktop = agent_desktop or AgentDesktopAdapter()
 
-        # Ensure failsafe is set safely
+        # Disable PyAutoGUI corner failsafe (we use global F9 Emergency Stop instead)
         try:
-            self.pyautogui.FAILSAFE = True
+            self.pyautogui.FAILSAFE = False
         except Exception:
             pass
 
     def launch_application(self, app_name: str) -> Tuple[bool, str]:
-        """Launch a Windows desktop application."""
-        clean_name = app_name.strip().lower()
-        cmd = APP_LAUNCH_MAP.get(clean_name, clean_name)
+        """Launch a Windows desktop application or open a URL / folder."""
+        clean_name = app_name.strip()
+        lower_name = clean_name.lower()
+
+        # Handle direct URLs
+        if lower_name.startswith("http://") or lower_name.startswith("https://"):
+            try:
+                if self.overlay:
+                    self.overlay.show_action(f"Opening {clean_name[:35]}...")
+                os.startfile(clean_name)
+                time.sleep(1.0)
+                return True, f"Opened URL {clean_name}"
+            except Exception as e:
+                return False, f"Failed opening URL {clean_name}: {e}"
+
+        cmd = APP_LAUNCH_MAP.get(lower_name, clean_name)
+
+        # Resolve explicit paths for common browsers on Windows
+        if lower_name in ("chrome", "google chrome"):
+            for p in (
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            ):
+                if os.path.exists(p):
+                    cmd = f'"{p}"'
+                    break
+
+        elif lower_name in ("edge", "msedge"):
+            for p in (
+                r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            ):
+                if os.path.exists(p):
+                    cmd = f'"{p}"'
+                    break
 
         if self.overlay:
             self.overlay.show_action(f"Launching {app_name}...")
@@ -71,7 +103,9 @@ class ActionController:
         try:
             # If agent-desktop is available and no custom mock backend is used, try agent-desktop launch
             if self.agent_desktop and self.agent_desktop.is_available() and not self._has_custom_py_backend:
-                res = self.agent_desktop.launch_app(cmd, activate=True, timeout_ms=8000)
+                # agent-desktop expects bare executable or app name
+                clean_target = "chrome.exe" if "chrome" in lower_name else ("msedge.exe" if "edge" in lower_name else cmd)
+                res = self.agent_desktop.launch_app(clean_target, activate=True, timeout_ms=8000)
                 if res.get("ok", False):
                     time.sleep(0.5)
                     return True, f"Launched {app_name} via agent-desktop"

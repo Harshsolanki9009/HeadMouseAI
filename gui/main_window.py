@@ -123,7 +123,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings: AppSettings = settings if settings is not None else get_settings()
 
-        self.setWindowTitle("HeadMouseAI — Hands-Free Desktop Controller")
+        self.setWindowTitle("HeadMouseAI — Autonomous AI Agent & Hands-Free Vision Control")
         self.resize(1240, 820)
         self.setMinimumSize(960, 680)
 
@@ -177,8 +177,8 @@ class MainWindow(QMainWindow):
         hdr = QWidget()
         hdr.setObjectName("header_widget")
         hdr_layout = QHBoxLayout(hdr)
-        hdr_layout.setContentsMargins(16, 10, 16, 10)
-        hdr_layout.setSpacing(12)
+        hdr_layout.setContentsMargins(16, 8, 16, 8)
+        hdr_layout.setSpacing(10)
 
         # Brand Icon
         lbl_logo = QLabel()
@@ -193,36 +193,64 @@ class MainWindow(QMainWindow):
 
         title_box = QVBoxLayout()
         title_box.setSpacing(1)
-        lbl_brand = QLabel("HeadMouseAI")
-        lbl_brand.setStyleSheet("font-size: 17px; font-weight: 700; color: #F5F5F5; letter-spacing: -0.3px;")
+        lbl_brand = QLabel("HEADMOUSE AI")
+        lbl_brand.setStyleSheet("font-size: 18px; font-weight: 800; color: #F2F0EA; letter-spacing: 0.5px;")
         title_box.addWidget(lbl_brand)
 
-        lbl_subtitle = QLabel("Hands-Free AI Desktop Controller")
-        lbl_subtitle.setStyleSheet("font-size: 12px; color: #A1A1AA; font-weight: 500;")
+        lbl_subtitle = QLabel("Hands-Free Vision Control • Autonomous AI Computer-Use Agent")
+        lbl_subtitle.setStyleSheet("font-size: 11px; color: #B9C0C7; font-weight: 500;")
         title_box.addWidget(lbl_subtitle)
         hdr_layout.addLayout(title_box)
 
         hdr_layout.addStretch(1)
 
+        # Quick-Trigger Button for Always-On-Top Floating HUD Panel
+        self.btn_header_hud = QPushButton("✦ Floating HUD")
+        self.btn_header_hud.setToolTip("Toggle Always-On-Top Accessible Floating HUD Panel")
+        self.btn_header_hud.setFixedHeight(28)
+        self.btn_header_hud.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_header_hud.setStyleSheet("""
+            QPushButton {
+                background-color: #2D3137;
+                color: #F2F0EA;
+                border: 1px solid #34383D;
+                border-radius: 6px;
+                padding: 4px 12px;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 0.3px;
+            }
+            QPushButton:hover {
+                background-color: #383D45;
+                border-color: #89958C;
+                color: #FFFFFF;
+            }
+            QPushButton:pressed {
+                background-color: #17191C;
+            }
+        """)
+        self.btn_header_hud.clicked.connect(self._toggle_floating_panel_visibility)
+        hdr_layout.addWidget(self.btn_header_hud)
+
         # Quick Status Pills in Header
         self.hdr_badge_camera = StatusBadge("OFFLINE")
-        self.hdr_badge_camera.setFixedWidth(92)
+        self.hdr_badge_camera.setFixedWidth(86)
         hdr_layout.addWidget(self.hdr_badge_camera)
 
         self.hdr_badge_tracking = StatusBadge("STOPPED")
-        self.hdr_badge_tracking.setFixedWidth(92)
+        self.hdr_badge_tracking.setFixedWidth(86)
         hdr_layout.addWidget(self.hdr_badge_tracking)
 
-        self.hdr_badge_mouse = StatusBadge("MOUSE OFF")
-        self.hdr_badge_mouse.setFixedWidth(96)
+        self.hdr_badge_mouse = StatusBadge("MANUAL")
+        self.hdr_badge_mouse.setFixedWidth(92)
         hdr_layout.addWidget(self.hdr_badge_mouse)
 
         self.hdr_badge_voice = StatusBadge("VOICE: IDLE")
-        self.hdr_badge_voice.setFixedWidth(100)
+        self.hdr_badge_voice.setFixedWidth(96)
         hdr_layout.addWidget(self.hdr_badge_voice)
 
         self.hdr_badge_jadoo = StatusBadge("JADOO IDLE")
-        self.hdr_badge_jadoo.setFixedWidth(100)
+        self.hdr_badge_jadoo.setFixedWidth(96)
         hdr_layout.addWidget(self.hdr_badge_jadoo)
 
         main_layout.addWidget(hdr)
@@ -272,13 +300,56 @@ class MainWindow(QMainWindow):
         self.status_bar.addWidget(self.lbl_status)
 
     def _create_dashboard_tab(self) -> QWidget:
-        """Create clean minimalist Dashboard tab with status cards, preview, and expandable details."""
+        """Create clean minimalist Dashboard tab with dual mouse control, 2-column layout, and scroll area."""
         container = QWidget()
         v_layout = QVBoxLayout(container)
-        v_layout.setContentsMargins(10, 8, 10, 6)
-        v_layout.setSpacing(8)
+        v_layout.setContentsMargins(10, 8, 10, 8)
+        v_layout.setSpacing(10)
 
-        # 1. Simple Status Panel (4 prominent status cards)
+        # 1. Dual Mouse Input Ownership Selector Bar
+        ownership_frame = QFrame()
+        ownership_frame.setStyleSheet("""
+            QFrame {
+                background-color: #222529;
+                border: 1px solid #34383D;
+                border-radius: 8px;
+                padding: 4px;
+            }
+        """)
+        of_layout = QHBoxLayout(ownership_frame)
+        of_layout.setContentsMargins(10, 4, 10, 4)
+        of_layout.setSpacing(8)
+
+        lbl_owner_title = QLabel("DUAL MOUSE CONTROL:")
+        lbl_owner_title.setStyleSheet("font-size: 11px; font-weight: 800; color: #B9C0C7; letter-spacing: 0.5px;")
+        of_layout.addWidget(lbl_owner_title)
+
+        self.btn_mode_manual = QPushButton("🖐️ MANUAL")
+        self.btn_mode_manual.setToolTip("Physical mouse and keyboard only")
+        self.btn_mode_headmouse = QPushButton("👤 HEADMOUSE (NOSE)")
+        self.btn_mode_headmouse.setToolTip("Control cursor with face/nose movements and wink clicks")
+        self.btn_mode_agent = QPushButton("🤖 AUTONOMOUS AI")
+        self.btn_mode_agent.setToolTip("Autonomous AI computer agent operates Windows")
+        self.btn_mode_paused = QPushButton("⏸️ PAUSED")
+        self.btn_mode_paused.setToolTip("Pause all automated inputs immediately")
+
+        self._ownership_buttons = [
+            ("MANUAL_MODE", self.btn_mode_manual),
+            ("HEADMOUSE_MODE", self.btn_mode_headmouse),
+            ("AGENT_MODE", self.btn_mode_agent),
+            ("PAUSED_MODE", self.btn_mode_paused),
+        ]
+
+        for mode_key, btn in self._ownership_buttons:
+            btn.setFixedHeight(28)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked=False, m=mode_key: self._set_input_mode(m))
+            of_layout.addWidget(btn)
+
+        of_layout.addStretch(1)
+        v_layout.addWidget(ownership_frame)
+
+        # 2. Status Panel (4 prominent status cards)
         panel_status = QHBoxLayout()
         panel_status.setSpacing(10)
 
@@ -291,16 +362,26 @@ class MainWindow(QMainWindow):
         self.card_calib = StatusCard("Calibration", "Ready", "OK")
         panel_status.addWidget(self.card_calib)
 
-        self.card_mouse = StatusCard("Mouse Control", "Disabled [F8]", "NORMAL")
+        self.card_mouse = StatusCard("Active Mouse Mode", "MANUAL", "NORMAL")
         panel_status.addWidget(self.card_mouse)
 
         v_layout.addLayout(panel_status)
 
-        # 2. Main Camera Preview (Large, stable, proper aspect ratio, minimal overlays)
-        self.video_widget = VideoWidget()
-        v_layout.addWidget(self.video_widget, 1)
+        # 3. Two-Column Split Layout for Complete Dual Control
+        cols_layout = QHBoxLayout()
+        cols_layout.setSpacing(12)
 
-        # 3. Main Controls Bar
+        # ---- Left Column: Vision & HeadMouseAI Hands-Free Control ---- #
+        left_col = QVBoxLayout()
+        left_col.setSpacing(8)
+
+        # Main Camera Preview
+        self.video_widget = VideoWidget()
+        self.video_widget.setMinimumSize(360, 240)
+        self.video_widget.setMaximumHeight(320)
+        left_col.addWidget(self.video_widget)
+
+        # Main Controls Bar
         self.control_bar = ControlBarWidget()
         self.control_bar.sig_start_requested.connect(self._on_start_tracking)
         self.control_bar.sig_stop_requested.connect(self._on_stop_tracking)
@@ -308,23 +389,9 @@ class MainWindow(QMainWindow):
         self.control_bar.sig_emergency_requested.connect(self._on_emergency_stop)
         self.control_bar.sig_calibrate_requested.connect(self._on_calibrate_requested)
         self.control_bar.sig_reset_requested.connect(self._on_reset_requested)
-        v_layout.addWidget(self.control_bar)
+        left_col.addWidget(self.control_bar)
 
-        # 4. Jadoo Voice Subsystem Card
-        self.voice_widget = VoiceControlWidget()
-        self.voice_widget.sig_toggle_dictation.connect(self._on_toggle_dictation)
-        self.voice_widget.sig_insert_text.connect(self._on_insert_dictation_text)
-        self.voice_widget.sig_language_changed.connect(self._on_voice_lang_changed)
-        self.voice_widget.set_language(getattr(self.settings.voice, "language", "en"))
-        v_layout.addWidget(self.voice_widget)
-
-        # 5. Jadoo AI Assistant Widget
-        self.jadoo_widget = JadooAssistantWidget(self.settings, self)
-        self.jadoo_widget.sig_ask_query.connect(self._on_jadoo_ask)
-        self.jadoo_widget.sig_insert_response.connect(self._on_jadoo_insert_text)
-        v_layout.addWidget(self.jadoo_widget)
-
-        # 6. Jadoo AI Cursor Control Card (HeadMouseAI)
+        # Jadoo AI Cursor Control Card (HeadMouseAI)
         self.ai_cursor_widget = AICursorWidget(self.settings, self)
         self.ai_cursor_widget.sig_cursor_on.connect(self._on_ai_cursor_on)
         self.ai_cursor_widget.sig_cursor_off.connect(self._on_ai_cursor_off)
@@ -335,13 +402,39 @@ class MainWindow(QMainWindow):
         self.ai_cursor_widget.sig_open_settings.connect(lambda: self.tabs.setCurrentIndex(2))
         self.ai_cursor_widget.sig_sensitivity_changed.connect(self._on_cursor_sensitivity_changed)
         self.ai_cursor_widget.sig_smoothing_changed.connect(self._on_cursor_smoothing_changed)
-        v_layout.addWidget(self.ai_cursor_widget)
+        left_col.addWidget(self.ai_cursor_widget)
+        left_col.addStretch(1)
 
-        # 7. Autonomous AI Computer Task Agent Widget
+        cols_layout.addLayout(left_col, 5)
+
+        # ---- Right Column: Voice & Autonomous AI Agent ---- #
+        right_col = QVBoxLayout()
+        right_col.setSpacing(8)
+
+        # Jadoo Voice Subsystem Card
+        self.voice_widget = VoiceControlWidget()
+        self.voice_widget.sig_toggle_dictation.connect(self._on_toggle_dictation)
+        self.voice_widget.sig_insert_text.connect(self._on_insert_dictation_text)
+        self.voice_widget.sig_language_changed.connect(self._on_voice_lang_changed)
+        self.voice_widget.set_language(getattr(self.settings.voice, "language", "en"))
+        right_col.addWidget(self.voice_widget)
+
+        # Jadoo AI Assistant Widget
+        self.jadoo_widget = JadooAssistantWidget(self.settings, self)
+        self.jadoo_widget.sig_ask_query.connect(self._on_jadoo_ask)
+        self.jadoo_widget.sig_insert_response.connect(self._on_jadoo_insert_text)
+        right_col.addWidget(self.jadoo_widget)
+
+        # Autonomous AI Computer Task Agent Widget
         self.task_agent_widget = TaskAgentWidget(None, self)
-        v_layout.addWidget(self.task_agent_widget)
+        right_col.addWidget(self.task_agent_widget)
+        right_col.addStretch(1)
 
-        # 8. Expandable Advanced Details Section
+        cols_layout.addLayout(right_col, 5)
+
+        v_layout.addLayout(cols_layout)
+
+        # 4. Expandable Advanced Details Section
         exp_header = QHBoxLayout()
         self.btn_toggle_diagnostics = QPushButton("▼ Show Advanced Details")
         self.btn_toggle_diagnostics.setFixedHeight(28)
@@ -367,27 +460,27 @@ class MainWindow(QMainWindow):
 
         diag_grid.addWidget(self._make_diag_lbl("Pipeline FPS:"), 0, 0)
         self.lbl_dash_fps = QLabel("0.0 FPS")
-        self.lbl_dash_fps.setStyleSheet("font-weight: 600; color: #60A5FA; font-family: 'Consolas', 'Cascadia Code', monospace;")
+        self.lbl_dash_fps.setStyleSheet("font-weight: 600; color: #60A5FA; font-family: 'Consolas', monospace;")
         diag_grid.addWidget(self.lbl_dash_fps, 0, 1)
 
         diag_grid.addWidget(self._make_diag_lbl("Inference Latency:"), 0, 2)
         self.lbl_dash_inf = QLabel("0.0 ms")
-        self.lbl_dash_inf.setStyleSheet("font-weight: 600; color: #34D399; font-family: 'Consolas', 'Cascadia Code', monospace;")
+        self.lbl_dash_inf.setStyleSheet("font-weight: 600; color: #34D399; font-family: 'Consolas', monospace;")
         diag_grid.addWidget(self.lbl_dash_inf, 0, 3)
 
         diag_grid.addWidget(self._make_diag_lbl("Left Eye EAR:"), 1, 0)
         self.lbl_dash_lear = QLabel("0.00 [OPEN]")
-        self.lbl_dash_lear.setStyleSheet("color: #E4E4E7; font-family: 'Consolas', 'Cascadia Code', monospace; font-weight: 600;")
+        self.lbl_dash_lear.setStyleSheet("color: #E4E4E7; font-family: 'Consolas', monospace; font-weight: 600;")
         diag_grid.addWidget(self.lbl_dash_lear, 1, 1)
 
         diag_grid.addWidget(self._make_diag_lbl("Right Eye EAR:"), 1, 2)
         self.lbl_dash_rear = QLabel("0.00 [OPEN]")
-        self.lbl_dash_rear.setStyleSheet("color: #E4E4E7; font-family: 'Consolas', 'Cascadia Code', monospace; font-weight: 600;")
+        self.lbl_dash_rear.setStyleSheet("color: #E4E4E7; font-family: 'Consolas', monospace; font-weight: 600;")
         diag_grid.addWidget(self.lbl_dash_rear, 1, 3)
 
         diag_grid.addWidget(self._make_diag_lbl("System Load:"), 2, 0)
         self.lbl_dash_sys = QLabel("CPU: 0% | RAM: 0 MB")
-        self.lbl_dash_sys.setStyleSheet("color: #A1A1AA; font-family: 'Consolas', 'Cascadia Code', monospace; font-weight: 500;")
+        self.lbl_dash_sys.setStyleSheet("color: #A1A1AA; font-family: 'Consolas', monospace; font-weight: 500;")
         diag_grid.addWidget(self.lbl_dash_sys, 2, 1)
 
         diag_grid.addWidget(self._make_diag_lbl("Active Mode:"), 2, 2)
@@ -639,10 +732,14 @@ class MainWindow(QMainWindow):
         # Connect Task Agent signals to UI updates
         self.task_manager.sig_status_changed.connect(self._on_task_status_changed)
         self.task_manager.sig_task_completed.connect(self._on_task_completed)
+        self.task_manager.input_coordinator.sig_mode_changed.connect(self._on_input_ownership_mode_changed)
 
         # Wire Floating Panel Phase 5 Task Agent signals
         self.floating_panel.sig_submit_task.connect(self._on_submit_task)
         self.floating_panel.sig_stop_task.connect(self._on_stop_task)
+
+        # Initialize Dual Mouse Ownership button state
+        self._update_ownership_buttons("MANUAL_MODE")
 
         if hasattr(self, "settings_tab") and self.settings_tab:
             self.settings_tab.sig_show_floating_panel.connect(self._toggle_floating_panel_visibility)
@@ -1007,15 +1104,13 @@ class MainWindow(QMainWindow):
             self._speak_feedback(acc_cmd.value.replace("_", " "))
 
         # 2. Mouse & Navigation actions
-        elif acc_cmd == AccessibilityCommand.MOUSE_ON or norm_name in ("mouse_on", "enable_mouse"):
-            if self.worker:
-                self.worker.set_real_mouse_enabled(True)
-            self._speak_feedback("Mouse on")
+        elif acc_cmd == AccessibilityCommand.MOUSE_ON or norm_name in ("mouse_on", "enable_mouse", "turn_on_head_mouse"):
+            self._set_input_mode("HEADMOUSE_MODE")
+            self._speak_feedback("Head mouse on")
 
-        elif acc_cmd == AccessibilityCommand.MOUSE_OFF or norm_name in ("mouse_off", "disable_mouse"):
-            if self.worker:
-                self.worker.set_real_mouse_enabled(False)
-            self._speak_feedback("Mouse off")
+        elif acc_cmd == AccessibilityCommand.MOUSE_OFF or norm_name in ("mouse_off", "disable_mouse", "turn_off_head_mouse"):
+            self._set_input_mode("MANUAL_MODE")
+            self._speak_feedback("Head mouse off")
 
         elif acc_cmd == AccessibilityCommand.PAUSE_CURSOR or norm_name == "pause_cursor":
             if self.worker:
@@ -1027,7 +1122,7 @@ class MainWindow(QMainWindow):
                 self.worker.resume_cursor()
             self._speak_feedback("Cursor resumed")
 
-        elif acc_cmd == AccessibilityCommand.CALIBRATE_CURSOR or norm_name in ("calibrate_cursor", "calibrate"):
+        elif acc_cmd == AccessibilityCommand.CALIBRATE_CURSOR or norm_name in ("calibrate_cursor", "calibrate", "calibrate_my_mouse"):
             self._on_calibrate_requested()
             self._speak_feedback("Calibrating")
 
@@ -1055,8 +1150,9 @@ class MainWindow(QMainWindow):
             self._speak_feedback("Typing off")
 
         # 4. Safety & Stops
-        elif acc_cmd in (AccessibilityCommand.EMERGENCY_STOP, AccessibilityCommand.STOP_ALL) or norm_name in ("emergency_stop", "stop_all"):
+        elif acc_cmd in (AccessibilityCommand.EMERGENCY_STOP, AccessibilityCommand.STOP_ALL) or norm_name in ("emergency_stop", "stop_all", "stop_everything"):
             self._on_emergency_stop()
+            self._set_input_mode("PAUSED_MODE")
             self._speak_feedback("Emergency stop")
 
         elif norm_name == "stop":
@@ -1065,27 +1161,30 @@ class MainWindow(QMainWindow):
             self._speak_feedback("Stopped")
 
         # 5. Autonomous Task Agent Actions
-        elif acc_cmd == AccessibilityCommand.START_TASK or norm_name in ("start_task", "run_task", "start_agent"):
+        elif acc_cmd == AccessibilityCommand.START_TASK or norm_name in ("start_task", "run_task", "start_agent", "start_autonomous_mode"):
             if hasattr(self, "task_manager") and self.task_manager:
                 if self.task_manager.current_plan:
                     self.task_manager.start_task()
-                    self._speak_feedback("Task started")
+                    self._speak_feedback("Autonomous mode started")
                 elif self.task_agent_widget and self.task_agent_widget.inp_instruction.text().strip():
                     self.task_manager.submit_instruction(self.task_agent_widget.inp_instruction.text().strip())
-                    self._speak_feedback("Task submitted")
+                    self.task_manager.start_task()
+                    self._speak_feedback("Autonomous mode started")
 
-        elif acc_cmd == AccessibilityCommand.PAUSE_TASK or norm_name in ("pause_task", "hold_task"):
+        elif acc_cmd == AccessibilityCommand.PAUSE_TASK or norm_name in ("pause_task", "hold_task", "pause_the_agent"):
             if hasattr(self, "task_manager") and self.task_manager:
                 self.task_manager.pause_task()
-                self._speak_feedback("Task paused")
+                self._speak_feedback("Agent paused")
 
-        elif acc_cmd == AccessibilityCommand.RESUME_TASK or norm_name in ("resume_task", "continue_task"):
+        elif acc_cmd == AccessibilityCommand.RESUME_TASK or norm_name in ("resume_task", "continue_task", "resume_the_agent"):
             if hasattr(self, "task_manager") and self.task_manager:
                 self.task_manager.resume_task()
-                self._speak_feedback("Task resumed")
+                self._speak_feedback("Agent resumed")
 
-        elif acc_cmd == AccessibilityCommand.STOP_TASK or norm_name in ("stop_task", "abort_task", "cancel_task"):
+        elif acc_cmd == AccessibilityCommand.STOP_TASK or norm_name in ("stop_task", "abort_task", "cancel_task", "stop_the_agent"):
             if hasattr(self, "task_manager") and self.task_manager:
+                self.task_manager.stop_task()
+                self._speak_feedback("Agent stopped")
                 self.task_manager.stop_task()
                 self._speak_feedback("Task stopped")
 
@@ -1283,14 +1382,113 @@ class MainWindow(QMainWindow):
                 self.lbl_status.setText(f"Inserted Jadoo response ({len(text)} chars) at cursor.")
 
     @Slot(str)
+    def _set_input_mode(self, mode_str: str) -> None:
+        """User switched input ownership mode via button, voice, or shortcut."""
+        logger.info(f"MainWindow setting input ownership mode: {mode_str}")
+        if hasattr(self, "task_manager") and self.task_manager:
+            self.task_manager.input_coordinator.set_mode(mode_str)
+        else:
+            self._on_input_ownership_mode_changed(mode_str)
+
+    @Slot(str)
+    def _on_input_ownership_mode_changed(self, mode_str: str) -> None:
+        """Handle input ownership change emitted by InputOwnershipCoordinator."""
+        clean_mode = mode_str.replace("_MODE", "")
+        logger.info(f"Active input ownership mode updated: {clean_mode}")
+
+        self._update_ownership_buttons(clean_mode)
+        if hasattr(self, "card_mouse") and self.card_mouse:
+            cat = "OK" if "HEAD" in clean_mode else ("ACTIVE" if "AGENT" in clean_mode else ("WARNING" if "PAUSE" in clean_mode else "NORMAL"))
+            self.card_mouse.set_status(clean_mode, cat)
+
+        if hasattr(self, "hdr_badge_mouse") and self.hdr_badge_mouse:
+            cat = "OK" if "HEAD" in clean_mode else ("ACTIVE" if "AGENT" in clean_mode else ("WARNING" if "PAUSE" in clean_mode else "NORMAL"))
+            self.hdr_badge_mouse.set_state(cat, clean_mode)
+
+        if hasattr(self, "floating_panel") and self.floating_panel:
+            self.floating_panel.update_mode_badge(clean_mode)
+
+    def _update_ownership_buttons(self, active_mode: str) -> None:
+        """Highlight active ownership button with high-contrast Ink Wash styling."""
+        if not hasattr(self, "_ownership_buttons"):
+            return
+
+        mode_u = active_mode.upper()
+        for mode_key, btn in self._ownership_buttons:
+            is_active = (mode_key == mode_u) or (mode_key.replace("_MODE", "") == mode_u)
+            if is_active:
+                if "PAUSE" in mode_key:
+                    bg = "#381318"
+                    border = "#B66F70"
+                    color = "#FCA5A5"
+                elif "HEAD" in mode_key:
+                    bg = "#1A2520"
+                    border = "#89958C"
+                    color = "#E2E8F0"
+                elif "AGENT" in mode_key:
+                    bg = "#231F33"
+                    border = "#7C3AED"
+                    color = "#EDE9FE"
+                else:
+                    bg = "#2D3137"
+                    border = "#89958C"
+                    color = "#F2F0EA"
+
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {bg};
+                        color: {color};
+                        border: 2px solid {border};
+                        border-radius: 6px;
+                        font-size: 11px;
+                        font-weight: 800;
+                        padding: 2px 12px;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet("""
+                    QPushButton {{
+                        background-color: #17191C;
+                        color: #777F87;
+                        border: 1px solid #34383D;
+                        border-radius: 6px;
+                        font-size: 11px;
+                        font-weight: 600;
+                        padding: 2px 12px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: #222529;
+                        color: #B9C0C7;
+                        border-color: #4E545D;
+                    }}
+                """)
+
+    @Slot(str)
     def _on_wake_word_detected(self, query: str) -> None:
-        """Respond to 'Hey Jadoo' wake word event."""
+        """Respond to 'Hey Jadoo' wake word event with computer task routing."""
         logger.info(f"MainWindow received wake word event (query='{query}')")
         self.tabs.setCurrentIndex(0)
+        clean_q = query.strip()
+        lower_q = clean_q.lower()
+
+        # Check if query is an action / computer-use task
+        action_prefixes = ("open ", "launch ", "search ", "google ", "calculate ", "create ", "make a folder ", "write ", "find ")
+        is_task = any(lower_q.startswith(p) for p in action_prefixes) or "on google" in lower_q or "in chrome" in lower_q or "leave application" in lower_q or "calculator" in lower_q
+
+        if is_task and hasattr(self, "task_manager") and self.task_manager:
+            logger.info(f"Routing wake query '{clean_q}' directly to TaskAgent")
+            if self.task_agent_widget:
+                self.task_agent_widget.inp_instruction.setText(clean_q)
+            self.task_manager.submit_instruction(clean_q)
+            self.task_manager.start_task()
+            self.lbl_status.setText(f"Jadoo TaskAgent executing: '{clean_q}'")
+            self._speak_feedback(f"Executing {clean_q[:30]}")
+            return
+
         if self.jadoo_widget:
-            if query.strip():
-                self.jadoo_widget.inp_query.setText(query.strip())
-                self._on_jadoo_ask(query.strip(), self.jadoo_widget.chk_screen.isChecked(), False)
+            if clean_q:
+                self.jadoo_widget.inp_query.setText(clean_q)
+                self._on_jadoo_ask(clean_q, self.jadoo_widget.chk_screen.isChecked(), False)
             else:
                 self.jadoo_widget.focus_query_input()
         self.lbl_status.setText("Jadoo: Wake word detected! Listening...")

@@ -34,6 +34,8 @@ class TaskManager(QObject):
     sig_confirmation_required = Signal(int, str) # (step_index, description)
     sig_task_completed = Signal(dict)            # Final report dict
     sig_log_message = Signal(str)                # Activity log line
+    sig_screenshot_captured = Signal(bytes)      # Raw JPEG bytes of desktop observation
+    sig_verification_status = Signal(str, str)   # (message, state)
 
     def __init__(
         self,
@@ -52,6 +54,7 @@ class TaskManager(QObject):
         self.input_coordinator = InputOwnershipCoordinator(
             vision_worker=vision_worker,
             keyboard_controller=keyboard_controller,
+            parent=self,
         )
         self.planner = TaskPlanner(gemini_client=gemini_client)
         self.executor = TaskExecutor(
@@ -70,6 +73,8 @@ class TaskManager(QObject):
         self.executor.sig_confirmation_required.connect(self.sig_confirmation_required)
         self.executor.sig_task_completed.connect(self._on_task_finished)
         self.executor.sig_log_message.connect(self.sig_log_message)
+        self.executor.sig_screenshot_captured.connect(self.sig_screenshot_captured)
+        self.executor.sig_verification_status.connect(self.sig_verification_status)
 
         self.current_plan: Optional[TaskPlan] = None
 

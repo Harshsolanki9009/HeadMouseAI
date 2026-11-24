@@ -47,8 +47,13 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("HeadMouseAI")
-    app.setOrganizationName("HeadMouseAI")
-    app.setApplicationDisplayName("HeadMouseAI - Hands-Free Windows Mouse")
+    app.setOrganizationName("ACROPOLIANS")
+    app.setApplicationDisplayName("HeadMouseAI — Hands-Free Vision Control & Autonomous AI Agent")
+
+    from PySide6.QtGui import QFont
+    default_font = QFont("Segoe UI", 10)
+    default_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    app.setFont(default_font)
 
     # Set Multi-Resolution Global Application & Taskbar Icon
     app_icon = QIcon()

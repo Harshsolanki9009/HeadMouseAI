@@ -48,6 +48,7 @@ ntuser.*
 logs/
 headmouse.log
 *.log
+scratch_ui/
 
 # Models (downloaded MediaPipe and Whisper models)
 assets/models/*.task

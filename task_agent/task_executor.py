@@ -35,6 +35,8 @@ class TaskExecutor(QThread):
     sig_confirmation_required = Signal(int, str) # (step_index, description)
     sig_task_completed = Signal(dict)            # Final report dict
     sig_log_message = Signal(str)                # Activity log entry
+    sig_screenshot_captured = Signal(bytes)      # Raw JPEG bytes of desktop observation
+    sig_verification_status = Signal(str, str)   # (message, state)
 
     def __init__(
         self,
@@ -189,7 +191,10 @@ class TaskExecutor(QThread):
             # 3. Observe before acting
             plan.status = TaskStatus.OBSERVING
             self.sig_status_changed.emit(TaskStatus.OBSERVING.value)
-            _, _, win_info = self.screen_observer.observe()
+            self.sig_verification_status.emit(f"Observing screen before Step {step.step_index + 1}...", "OBSERVING")
+            jpeg_bytes, _, win_info = self.screen_observer.observe()
+            if jpeg_bytes:
+                self.sig_screenshot_captured.emit(jpeg_bytes)
 
             # 4. Act visibly
             plan.status = TaskStatus.RUNNING
@@ -208,10 +213,19 @@ class TaskExecutor(QThread):
             if success:
                 step.status = StepStatus.DONE
                 self.sig_step_completed.emit(step.step_index)
+                self.sig_verification_status.emit(f"Step {step.step_index + 1} verified: {step.description}", "OK")
+                # Post-action fresh desktop observation for visual verification
+                try:
+                    post_bytes, _, _ = self.screen_observer.observe()
+                    if post_bytes:
+                        self.sig_screenshot_captured.emit(post_bytes)
+                except Exception:
+                    pass
             else:
                 step.status = StepStatus.FAILED
                 step.error = err
                 self.sig_step_failed.emit(step.step_index, err or "Unknown error")
+                self.sig_verification_status.emit(f"Step {step.step_index + 1} verification failed: {err}", "FAIL")
                 plan.errors.append(f"Step {step.step_index + 1}: {err}")
                 break
 
@@ -222,10 +236,13 @@ class TaskExecutor(QThread):
         plan.completed_at = time.time()
         if self._stop_requested:
             plan.status = TaskStatus.STOPPED
+            self.sig_verification_status.emit("Task stopped by user (F9)", "FAIL")
         elif any(s.status == StepStatus.FAILED for s in plan.steps):
             plan.status = TaskStatus.FAILED
+            self.sig_verification_status.emit("Task failed verification", "FAIL")
         else:
             plan.status = TaskStatus.COMPLETED
+            self.sig_verification_status.emit("All actions verified complete", "OK")
 
         self._running = False
         self.sig_status_changed.emit(plan.status.value)

@@ -60,6 +60,29 @@ class ScreenCapture:
             except Exception as e2:
                 logger.warning(f"PySide6 screen grab fallback failed: {e2}")
 
+        # 3. Native Win32 desktop grab via Vercel Labs agent-desktop
+        if img is None:
+            try:
+                import os
+                import tempfile
+                from task_agent.agent_desktop_adapter import AgentDesktopAdapter
+
+                adapter = AgentDesktopAdapter()
+                if adapter.is_available():
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                        temp_png = tf.name
+                    res = adapter.screenshot(temp_png, screen_index=0)
+                    if res.get("ok", False) and os.path.exists(temp_png) and os.path.getsize(temp_png) > 0:
+                        img = Image.open(temp_png)
+                        img.load()
+                    try:
+                        if os.path.exists(temp_png):
+                            os.remove(temp_png)
+                    except Exception:
+                        pass
+            except Exception as e3:
+                logger.debug(f"Agent-desktop screen grab fallback failed: {e3}")
+
         if img is None:
             return None, None, "Unable to capture desktop screen (display DC unavailable)."
 
